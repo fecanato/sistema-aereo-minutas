@@ -13,6 +13,7 @@
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
     <script>
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -2556,48 +2557,65 @@
             return { recebedor: base, destino: base, destinoBruto: s };
         }
 
+        function calcularCodigoProdutoPortalLatam(produtoStr, destIata) {
+            const prodTxt = String(produtoStr || '').toUpperCase();
+            const iata = String(destIata || '').trim().toUpperCase();
+            if (prodTxt.includes('VELOZ')) return 'VLZBA';
+            if (prodTxt.includes('ESTANDAR')) {
+                const st3Destinos = ['FOR', 'MAO', 'IOS', 'SLZ', 'IMP', 'THE', 'BEL', 'PMW', 'AJU', 'JPA', 'VDC', 'RAO'];
+                const st5Destinos = ['STM', 'MAB'];
+                const st7Destinos = ['BVB', 'MCP', 'PVH', 'RBR'];
+                if (st3Destinos.includes(iata)) return 'ST3BA';
+                if (st5Destinos.includes(iata)) return 'ST5BA';
+                if (st7Destinos.includes(iata)) return 'ST7BA';
+                return 'ST2BA';
+            }
+            if (prodTxt.includes('E-FACIL') || prodTxt.includes('EFACIL')) {
+                const ef4 = ['CGB', 'PMW', 'BEL', 'REC', 'FOR', 'IOS', 'SLZ', 'IMP', 'THE', 'AJU', 'JPA'];
+                const ef5 = ['MAO', 'RAO', 'MAB', 'STM'];
+                if (ef4.includes(iata)) return 'EF4BA';
+                if (ef5.includes(iata)) return 'EF5BA';
+                return 'EF3BA';
+            }
+            return 'RESBA';
+        }
+
         window.abrirPortalLatamAutoFill = function() {
             if (!minutaAberta) return;
             registrarAlvoCapturaLatam(minutaAberta);
             const d = aplicarRegrasMalhaEInjetarBases(minutaAberta);
-            const origem = encodeURIComponent(d.remessa.Origem || 'GRU');
+            const origemRaw = (d.remessa.Origem || 'GRU').toString().trim().toUpperCase();
+            const origem = encodeURIComponent(origemRaw);
             const codigosPortal = resolverDestinoERecebedorPortalLatam(minutaAberta.destino);
             const destino = encodeURIComponent(codigosPortal.destino);
             const recebedor = encodeURIComponent(codigosPortal.recebedor);
             const destBrutoEnc = encodeURIComponent(codigosPortal.destinoBruto);
-            const peso = encodeURIComponent(d.remessa.Peso || 0);
-            const volume = encodeURIComponent(d.remessa.Volume || 1);
-            let prodCode = 'RESBA';
-            const prodTxt = (d.remessa.Produto || '').toUpperCase();
+            const pesoRaw = parseNumeroUniversal(d.remessa.Peso || 0);
+            const volumeRaw = parseInt(d.remessa.Volume) || 1;
+            const peso = encodeURIComponent(pesoRaw);
+            const volume = encodeURIComponent(volumeRaw);
+            const prodTxt = (d.remessa.Produto || 'RESERVADO').toUpperCase();
             const destIata = codigosPortal.destino;
-
-            if (prodTxt.includes('VELOZ')) prodCode = 'VLZBA';
-            else if (prodTxt.includes('ESTANDAR')) {
-                const st3Destinos = ['FOR', 'MAO', 'IOS', 'SLZ', 'IMP', 'THE', 'BEL', 'PMW', 'AJU', 'JPA', 'VDC', 'RAO'];
-                const st5Destinos = ['STM', 'MAB'];
-                const st7Destinos = ['BVB', 'MCP', 'PVH', 'RBR'];
-                
-                if (st3Destinos.includes(destIata)) prodCode = 'ST3BA';
-                else if (st5Destinos.includes(destIata)) prodCode = 'ST5BA';
-                else if (st7Destinos.includes(destIata)) prodCode = 'ST7BA';
-                else prodCode = 'ST2BA';
-            } else if (prodTxt.includes('E-FACIL') || prodTxt.includes('EFACIL')) {
-                const ef4 = ['CGB', 'PMW', 'BEL', 'REC', 'FOR', 'IOS', 'SLZ', 'IMP', 'THE', 'AJU', 'JPA'];
-                const ef5 = ['MAO', 'RAO', 'MAB', 'STM'];
-                if (ef4.includes(destIata)) prodCode = 'EF4BA';
-                else if (ef5.includes(destIata)) prodCode = 'EF5BA';
-                else prodCode = 'EF3BA';
-            }
+            const prodCode = calcularCodigoProdutoPortalLatam(prodTxt, destIata);
 
             const b64Excel = obterExcelLatamMinuta(minutaAberta);
             const nomeArquivoExcel = (minutaAberta.dados && minutaAberta.dados.doc_excel_nome)
                 ? minutaAberta.dados.doc_excel_nome
                 : `${(minutaAberta.destino || 'DOC').trim().toUpperCase()}.xlsx`;
+            const dadosExcelEsp = extrairDadosPlanilhaExcelLatam(minutaAberta);
 
             window.dispatchEvent(new CustomEvent('EnviarExcelLatam', {
                 detail: {
+                    minutaId: minutaAberta.id,
                     destino: (minutaAberta.destino || '').trim().toUpperCase(),
                     destinoIata: destIata,
+                    recebedorIata: codigosPortal.recebedor,
+                    origem: origemRaw,
+                    peso: pesoRaw,
+                    volume: volumeRaw,
+                    produto: prodTxt,
+                    prodCode: prodCode,
+                    awbsEsperadas: dadosExcelEsp.awbs,
                     nomeArquivo: nomeArquivoExcel,
                     b64: b64Excel || null,
                     ts: Date.now()
@@ -3129,8 +3147,24 @@
 
         window.copiarValor = function(btn, valor) { navigator.clipboard.writeText(valor).then(() => { showToast(`Copiado!`); const iconeOrigin = btn.innerHTML; btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i> Copiado`; btn.classList.remove('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); btn.classList.add('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); if(window.lucide) lucide.createIcons(); setTimeout(() => { btn.innerHTML = iconeOrigin; btn.classList.remove('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); btn.classList.add('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); if(window.lucide) lucide.createIcons(); }, 2000); }); }
 
-        window.marcarConcluida = function() {
+        window.marcarConcluida = async function() {
             if(minutaAberta) {
+                const ehLatam = (minutaAberta.cia || '').toUpperCase() === 'LATAM';
+                if (ehLatam && minutaAberta._validandoCapturaFormPromise) {
+                    try { await minutaAberta._validandoCapturaFormPromise; } catch (e) {}
+                }
+                if (ehLatam && minutaAberta._capturaFormInvalidaMotivo && !obterImagemMinuta(minutaAberta, 'FORM')) {
+                    abrirModalSistema(
+                        "Dados Inválidos na Captura 🚫",
+                        `A captura do formulário de "${minutaAberta.destino}" foi recusada por conter dados divergentes do sistema:\n\n• ${minutaAberta._capturaFormInvalidaMotivo}\n\nPor favor, corrija os dados no portal da LATAM e faça uma nova captura do formulário antes de concluir.`
+                    );
+                    return;
+                }
+                if (ehLatam && !obterImagemMinuta(minutaAberta, 'FORM')) {
+                    abrirModalSistema("Captura Obrigatória 📸", `A captura do Formulário preenchido de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
+                    return;
+                }
+
                 const awbInput = document.getElementById('input-awb-minuta');
                 let val = '';
                 
@@ -4798,6 +4832,580 @@
             return candidatasIata[0] || (minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM' ? (minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta) : null);
         }
 
+        // ============================================================================
+        // TRAVA DE SEGURANÇA 100% INVISÍVEL DA 1ª CAPTURA (FORMULÁRIO LATAM)
+        // Lê e valida Origem, Destino/Recebedor, Peso, Volume, Produto e AWBs do Excel
+        // ============================================================================
+        const cachePlanilhasExcelLatamParsed = new Map();
+        const imagensFormRejeitadasPorMinuta = new Map();
+        const imagensFormValidadasOkSet = new Set();
+
+        function assinaturaCurtaImagem(b64) {
+            if (!b64 || typeof b64 !== 'string') return '';
+            const n = b64.length;
+            return `${n}::${b64.slice(0, 64)}::${b64.slice(Math.floor(n / 2), Math.floor(n / 2) + 64)}::${b64.slice(-64)}`;
+        }
+
+        function extrairDadosPlanilhaExcelLatam(minuta) {
+            const vazio = { temPlanilha: false, awbs: [], valores: [], somaValores: 0 };
+            if (!minuta || (minuta.cia || '').toUpperCase() !== 'LATAM') return vazio;
+            const b64 = obterExcelLatamMinuta(minuta);
+            if (!b64 || typeof XLSX === 'undefined') return vazio;
+
+            const chaveCache = `${minuta.id || minuta.destino}::${b64.length}::${b64.slice(-48)}`;
+            if (cachePlanilhasExcelLatamParsed.has(chaveCache)) {
+                return cachePlanilhasExcelLatamParsed.get(chaveCache);
+            }
+
+            try {
+                const rawB64 = b64.replace(/^data:.*;base64,/, '');
+                const wb = XLSX.read(rawB64, { type: 'base64' });
+                const nomeAba = wb.SheetNames[0];
+                if (!nomeAba) return vazio;
+                const sheet = wb.Sheets[nomeAba];
+                const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+                const awbs = [];
+                const valores = [];
+                const vistos = new Set();
+
+                for (let r = 0; r < linhas.length; r++) {
+                    const row = linhas[r];
+                    if (!Array.isArray(row) || row.length === 0) continue;
+                    // Coluna B (índice 1) é "Número" (AWB FedEx de 12 dígitos), mas varremos a linha caso o layout varie
+                    let awbCand = String(row[1] ?? '').replace(/\D/g, '');
+                    if (awbCand.length < 8 || awbCand.length > 15) {
+                        awbCand = '';
+                        for (let c = 0; c < row.length; c++) {
+                            const limpo = String(row[c] ?? '').replace(/\D/g, '');
+                            if (limpo.length >= 10 && limpo.length <= 14) {
+                                awbCand = limpo;
+                                break;
+                            }
+                        }
+                    }
+                    if (awbCand && awbCand.length >= 8 && !vistos.has(awbCand)) {
+                        vistos.add(awbCand);
+                        awbs.push(awbCand);
+                        const valCell = row[4] !== undefined ? row[4] : row[row.length - 1];
+                        const valNum = parseNumeroUniversal(valCell);
+                        if (valNum > 0) valores.push(valNum);
+                    }
+                }
+
+                const somaValores = Number(valores.reduce((acc, v) => acc + v, 0).toFixed(2));
+                const res = { temPlanilha: true, awbs, valores, somaValores };
+                cachePlanilhasExcelLatamParsed.set(chaveCache, res);
+                return res;
+            } catch (e) {
+                return vazio;
+            }
+        }
+
+        function obterDadosEsperadosMinutaLatam(minuta) {
+            const d = aplicarRegrasMalhaEInjetarBases(minuta);
+            const cods = resolverDestinoERecebedorPortalLatam(minuta.destino);
+            const origemEsp = String(d.remessa?.Origem || 'GRU').trim().toUpperCase();
+            const destinoBrutoEsp = String(minuta.destino || '').trim().toUpperCase();
+            const destinoIataEsp = String(cods.destino || '').trim().toUpperCase();
+            const recebedorIataEsp = String(cods.recebedor || '').trim().toUpperCase();
+            const volumeEsp = parseInt(d.remessa?.Volume) || 0;
+            const pesoEsp = parseNumeroUniversal(d.remessa?.Peso);
+            const produtoTxtEsp = String(d.remessa?.Produto || 'RESERVADO').trim().toUpperCase();
+            const prodCodeEsp = calcularCodigoProdutoPortalLatam(produtoTxtEsp, destinoIataEsp);
+            const excelInfo = extrairDadosPlanilhaExcelLatam(minuta);
+
+            return {
+                minutaId: minuta.id,
+                destinoBrutoEsp,
+                origemEsp,
+                destinoIataEsp,
+                recebedorIataEsp,
+                volumeEsp,
+                pesoEsp,
+                produtoTxtEsp,
+                prodCodeEsp,
+                excelInfo
+            };
+        }
+
+        function pesoCompativelPortalLatam(pesoLidoNum, pesoEsperadoNum) {
+            if (isNaN(pesoLidoNum) || pesoLidoNum <= 0 || isNaN(pesoEsperadoNum) || pesoEsperadoNum <= 0) return true;
+            // O portal LATAM pode exibir o peso exato (ex: 36.5) ou arredondado para inteiro (ex: 37)
+            if (Math.abs(pesoLidoNum - pesoEsperadoNum) <= 0.65) return true;
+            if (Math.abs(pesoLidoNum - Math.round(pesoEsperadoNum)) <= 0.05) return true;
+            if (Math.abs(pesoLidoNum - Math.ceil(pesoEsperadoNum)) <= 0.05) return true;
+            return false;
+        }
+
+        function produtoCompativelPortalLatam(prodLidoStr, produtoTxtEsp, prodCodeEsp) {
+            const s = normalizarTextoComparacao(prodLidoStr);
+            if (!s) return true;
+            const codeEsp = normalizarTextoComparacao(prodCodeEsp);
+            const txtEsp = normalizarTextoComparacao(produtoTxtEsp);
+            if (codeEsp && s.includes(codeEsp)) return true;
+
+            const ehVelozEsp = txtEsp.includes('VELOZ') || codeEsp === 'VLZBA';
+            const ehEstandarEsp = txtEsp.includes('ESTANDAR') || txtEsp.includes('STANDARD') || codeEsp.startsWith('ST');
+            const ehEFacilEsp = txtEsp.includes('FACIL') || codeEsp.startsWith('EF');
+            const ehReservadoEsp = !ehVelozEsp && !ehEstandarEsp && !ehEFacilEsp;
+
+            const lidoVeloz = s.includes('VLZBA') || s.includes('VELOZ');
+            const lidoEstandar = /\bST[2357]BA\b/.test(s) || s.includes('ESTANDAR') || s.includes('STANDARD');
+            const lidoEFacil = /\bEF[345]BA\b/.test(s) || s.includes('FACIL');
+            const lidoReservado = s.includes('RESBA') || s.includes('RESERVADO');
+
+            if (ehVelozEsp && (lidoEstandar || lidoEFacil || lidoReservado)) return false;
+            if (ehEstandarEsp && (lidoVeloz || lidoEFacil || lidoReservado)) return false;
+            if (ehEFacilEsp && (lidoVeloz || lidoEstandar || lidoReservado)) return false;
+            if (ehReservadoEsp && (lidoVeloz || lidoEstandar || lidoEFacil)) return false;
+            return true;
+        }
+
+        function awbCompativelComListaEsperada(awbLida, listaEsperada, maxDiff = 2) {
+            const limpa = String(awbLida || '').replace(/\D/g, '');
+            if (!limpa || !Array.isArray(listaEsperada) || listaEsperada.length === 0) return false;
+            for (const esp of listaEsperada) {
+                if (esp === limpa) return true;
+                if (limpa.length >= 8 && esp.endsWith(limpa)) return true;
+                if (esp.length >= 8 && limpa.endsWith(esp)) return true;
+                if (esp.length === limpa.length) {
+                    let diffs = 0;
+                    for (let i = 0; i < esp.length; i++) {
+                        if (esp[i] !== limpa[i]) diffs++;
+                        if (diffs > maxDiff) break;
+                    }
+                    if (diffs <= maxDiff) return true;
+                }
+            }
+            return false;
+        }
+
+        function obterOutrosBlocosLatamDaOperacao(alvo) {
+            const opAlvo = (alvo && alvo.operacao) ? alvo.operacao : operacaoAtual;
+            return minutasDb
+                .filter(m => m.id !== alvo?.id && (!opAlvo || !m.operacao || m.operacao === opAlvo) && (m.cia || '').toUpperCase() === 'LATAM')
+                .map(m => ({ minuta: m, esp: obterDadosEsperadosMinutaLatam(m) }));
+        }
+
+        function rejeitarCapturaFormularioInvalida(alvo, imagemInvalida, divergencias) {
+            if (!alvo || !Array.isArray(divergencias) || divergencias.length === 0) return;
+            const ass = assinaturaCurtaImagem(imagemInvalida);
+            if (ass) imagensFormRejeitadasPorMinuta.set(alvo.id, ass);
+            alvo._capturaFormInvalidaMotivo = divergencias.join('\n• ');
+
+            const opAlvo = alvo.operacao || operacaoAtual || '';
+            const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
+            const i3Base = extrairIataBase(destExatoAlvo);
+
+            if (alvo.dados) delete alvo.dados.img_form;
+            alvo._capturaLocalRecenteForm = false;
+
+            if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
+                delete minutaAberta.dados.img_form;
+            }
+
+            removerSessionSeguro(`minuta_img_form_id_${alvo.id}`, opAlvo);
+            if (destExatoAlvo) removerSessionSeguro(`minuta_img_form_${destExatoAlvo}`, opAlvo);
+            if (i3Base) removerSessionSeguro(`minuta_img_form_${i3Base}`, opAlvo);
+
+            if (supabaseClient) {
+                salvarDadosMinutaPreservandoAnexos(alvo);
+            }
+
+            atualizarUICapturasMinutaAberta();
+            renderCardsRelatorios();
+            renderDashboard();
+
+            const modalPrevia = document.getElementById('modal-previa-captura');
+            if (modalPrevia && !modalPrevia.classList.contains('hidden')) {
+                fecharModalPreviaCaptura();
+            }
+
+            abrirModalSistema(
+                "Dados Inválidos na Captura 🚫",
+                `O sistema reconheceu dados inválidos na captura do formulário de ${alvo.destino}:\n\n• ${divergencias.join('\n• ')}\n\nA captura foi descartada por segurança. Corrija os dados no portal da LATAM e faça uma nova captura.`
+            );
+        }
+
+        function validarMetadadosSincronoCapturaForm(alvo, detail, esp, outrosBlocos) {
+            const divergencias = [];
+            if (!alvo || !detail) return divergencias;
+            const { imagem } = detail;
+
+            // 1. Verifica se a imagem é exatamente igual à captura de AWB (2ª tela capturada no botão da 1ª tela)
+            const imgAwbAlvo = obterImagemMinuta(alvo, 'AWB');
+            if (imagem && imgAwbAlvo && imagem === imgAwbAlvo) {
+                divergencias.push('A imagem capturada é a tela de confirmação de AWB, e não o Formulário preenchido da minuta.');
+                return divergencias;
+            }
+
+            // 2. Verifica se a imagem é idêntica à captura já salva em outro destino da operação
+            for (const outro of outrosBlocos) {
+                const imgFormOutro = obterImagemMinuta(outro.minuta, 'FORM');
+                const imgAwbOutro = obterImagemMinuta(outro.minuta, 'AWB');
+                if (imagem && imgFormOutro && imagem === imgFormOutro) {
+                    divergencias.push(`Captura repetida de outro voo/bloco: esta imagem já pertence à minuta de "${outro.minuta.destino}".`);
+                    return divergencias;
+                }
+                if (imagem && imgAwbOutro && imagem === imgAwbOutro) {
+                    divergencias.push(`Tela incorreta: esta imagem pertence à confirmação de AWB de "${outro.minuta.destino}".`);
+                    return divergencias;
+                }
+            }
+
+            // 3. Valida campos estruturados caso enviados junto no payload da captura
+            const origCap = String(detail.origem || detail.orig || detail.aeroportoOrigem || '').trim().toUpperCase();
+            if (origCap && origCap.length === 3 && origCap !== esp.origemEsp) {
+                divergencias.push(`Origem divergente: preenchido "${origCap}", mas o sistema exige "${esp.origemEsp}".`);
+            }
+
+            const destCapRaw = String(detail.destino || detail.dest || detail.iata3 || '').trim().toUpperCase();
+            if (destCapRaw) {
+                const i3Cap = extrairIataBase(destCapRaw);
+                if (i3Cap && i3Cap !== esp.destinoIataEsp && i3Cap !== esp.recebedorIataEsp) {
+                    divergencias.push(`Destino divergente: preenchido "${i3Cap}", mas a minuta é para "${esp.destinoIataEsp}" (${alvo.destino}).`);
+                }
+            }
+
+            const recCapRaw = String(detail.recebedor || detail.recebedorIata || '').trim().toUpperCase();
+            if (recCapRaw) {
+                const rec3 = extrairIataBase(recCapRaw);
+                if (rec3 && rec3 !== esp.recebedorIataEsp && rec3 !== esp.destinoIataEsp) {
+                    divergencias.push(`Recebedor divergente: preenchido "${rec3}", mas o sistema exige "${esp.recebedorIataEsp}".`);
+                }
+            }
+
+            const brutoCap = String(detail.bruto || detail.destino_bruto || '').trim().toUpperCase();
+            if (brutoCap && brutoCap.length > 3 && normalizarTextoComparacao(brutoCap) !== normalizarTextoComparacao(alvo.destino)) {
+                const outroExato = outrosBlocos.find(o => normalizarTextoComparacao(o.minuta.destino) === normalizarTextoComparacao(brutoCap));
+                if (outroExato) {
+                    divergencias.push(`Bloco divergente: captura gerada a partir de "${outroExato.minuta.destino}", mas a minuta atual é "${alvo.destino}".`);
+                }
+            }
+
+            const volField = detail.volume ?? detail.volumes ?? detail.quantidade ?? detail.qtd;
+            if (volField !== undefined && volField !== null && String(volField).trim() !== '') {
+                const volCap = parseInt(volField);
+                if (!isNaN(volCap) && volCap !== esp.volumeEsp) {
+                    divergencias.push(`Volume divergente: preenchido "${volCap} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
+                }
+            }
+
+            const pesoField = detail.peso ?? detail.pesoKg ?? detail.peso_total;
+            if (pesoField !== undefined && pesoField !== null && String(pesoField).trim() !== '') {
+                const pesoCap = parseNumeroUniversal(pesoField);
+                if (!isNaN(pesoCap) && pesoCap > 0 && !pesoCompativelPortalLatam(pesoCap, esp.pesoEsp)) {
+                    divergencias.push(`Peso divergente: preenchido "${pesoCap} kg", mas o sistema exige "${esp.pesoEsp} kg".`);
+                }
+            }
+
+            const prodField = detail.produto ?? detail.servico ?? detail.prodCode;
+            if (prodField !== undefined && prodField !== null && String(prodField).trim() !== '') {
+                if (!produtoCompativelPortalLatam(String(prodField), esp.produtoTxtEsp, esp.prodCodeEsp)) {
+                    divergencias.push(`Produto/Serviço divergente: preenchido "${prodField}", mas o sistema exige "${esp.produtoTxtEsp} (${esp.prodCodeEsp})".`);
+                }
+            }
+
+            const awbsField = detail.awbs ?? detail.documentos ?? detail.notas ?? detail.awbsCarregadas;
+            if (Array.isArray(awbsField) && esp.excelInfo.temPlanilha && esp.excelInfo.awbs.length > 0) {
+                const awbsCap = awbsField
+                    .map(x => typeof x === 'object' && x !== null ? String(x.numero || x.awb || x.Numero || '') : String(x || ''))
+                    .map(s => s.replace(/\D/g, ''))
+                    .filter(s => s.length >= 8);
+
+                if (awbsCap.length === 0) {
+                    divergencias.push(`Nenhuma AWB carregada no formulário (esperado: ${esp.excelInfo.awbs.length} AWB(s) da planilha de ${alvo.destino}).`);
+                } else {
+                    if (awbsCap.length !== esp.excelInfo.awbs.length) {
+                        divergencias.push(`Quantidade de AWBs carregadas (${awbsCap.length}) diverge da planilha de ${alvo.destino} (${esp.excelInfo.awbs.length} AWB(s)).`);
+                    }
+                    const invalidas = awbsCap.filter(a => !awbCompativelComListaEsperada(a, esp.excelInfo.awbs, 1));
+                    if (invalidas.length > 0) {
+                        const deOutro = outrosBlocos.find(o => o.esp.excelInfo.awbs.some(aEsp => invalidas.includes(aEsp)));
+                        if (deOutro) {
+                            divergencias.push(`Foram carregadas AWBs pertencentes ao destino "${deOutro.minuta.destino}" (ex: AWB ${invalidas[0]}) em vez de "${alvo.destino}".`);
+                        } else {
+                            divergencias.push(`AWB(s) carregada(s) no formulário (${invalidas.slice(0, 3).join(', ')}) não pertencem à minuta de ${alvo.destino}.`);
+                        }
+                    }
+                }
+            }
+
+            return divergencias;
+        }
+
+        function prepararCanvasOcrCapturaForm(imagemBase64) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const wOrig = img.naturalWidth || img.width || 1200;
+                        const hOrig = img.naturalHeight || img.height || 800;
+                        const escala = wOrig < 1500 ? 2.0 : (wOrig < 2000 ? 1.5 : 1.15);
+                        const w = Math.min(3000, Math.round(wOrig * escala));
+                        const h = Math.min(3000, Math.round(hOrig * escala));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(0, 0, w, h);
+                        ctx.drawImage(img, 0, 0, w, h);
+
+                        // Realce suave de contraste em tons de cinza para deixar os campos digitados nítidos no OCR
+                        const imgData = ctx.getImageData(0, 0, w, h);
+                        const d = imgData.data;
+                        for (let i = 0; i < d.length; i += 4) {
+                            const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                            const ajustado = lum < 175 ? Math.max(0, (lum - 175) * 1.45 + 175) : Math.min(255, 225 + (lum - 175) * 0.35);
+                            d[i] = d[i + 1] = d[i + 2] = ajustado;
+                        }
+                        ctx.putImageData(imgData, 0, 0);
+                        resolve({ dataUrl: canvas.toDataURL('image/png'), width: w, height: h });
+                    } catch (e) {
+                        resolve({ dataUrl: imagemBase64, width: 1200, height: 800 });
+                    }
+                };
+                img.onerror = () => resolve(null);
+                img.src = imagemBase64;
+            });
+        }
+
+        function obterConjuntoIatasConhecidosMalha() {
+            const set = new Set([
+                'BSB', 'FOR', 'MAO', 'REC', 'SSA', 'BEL', 'VIX', 'CGB', 'CGR', 'PMW',
+                'SLZ', 'IMP', 'THE', 'AJU', 'JPA', 'IOS', 'ITN', 'STM', 'MAB', 'BVB',
+                'MCP', 'PVH', 'RBR', 'CNF', 'POA', 'CWB', 'FLN', 'NVT', 'GYN', 'MCZ',
+                'NAT', 'IGU', 'BPS', 'PNZ', 'JDO', 'VDC', 'RAO', 'SDU', 'GIG', 'OPS'
+            ]);
+            if (Array.isArray(malhaDb)) {
+                malhaDb.forEach(m => {
+                    const i3 = extrairIataBase(m.iata);
+                    if (i3 && i3.length === 3) set.add(i3);
+                });
+            }
+            if (Array.isArray(minutasDb)) {
+                minutasDb.forEach(m => {
+                    const i3 = extrairIataBase(m.destino);
+                    if (i3 && i3.length === 3) set.add(i3);
+                });
+            }
+            set.delete('GRU');
+            set.delete('CGH');
+            set.delete('YYS');
+            return set;
+        }
+
+        async function executarAnaliseOcrInvisivelCapturaForm(alvo, imagemBase64) {
+            if (!alvo || !imagemBase64 || typeof Tesseract === 'undefined') return;
+            const ass = assinaturaCurtaImagem(imagemBase64);
+            if (ass && imagensFormValidadasOkSet.has(`${alvo.id}::${ass}`)) return;
+
+            const prep = await prepararCanvasOcrCapturaForm(imagemBase64);
+            if (!prep || !prep.dataUrl) return;
+
+            // Confirma que a imagem ainda é a captura ativa da minuta antes de rodar
+            if (obterImagemMinuta(alvo, 'FORM') !== imagemBase64) return;
+
+            let ocrResult = null;
+            try {
+                ocrResult = await Tesseract.recognize(prep.dataUrl, 'eng');
+            } catch (e) {
+                return;
+            }
+            if (!ocrResult || !ocrResult.data) return;
+            if (obterImagemMinuta(alvo, 'FORM') !== imagemBase64) return;
+
+            const esp = obterDadosEsperadosMinutaLatam(alvo);
+            const outrosBlocos = obterOutrosBlocosLatamDaOperacao(alvo);
+            const divergencias = [];
+
+            const textoBruto = String(ocrResult.data.text || '');
+            const textoNorm = normalizarTextoComparacao(textoBruto);
+
+            // 1. Verifica se capturou por engano a tela de Status/AWB no lugar do Formulário
+            if ((textoNorm.includes('STATUS DA CRIACAO') || textoNorm.includes('MINUTA CREATE SUCCESSFULLY') || textoNorm.includes('MINUTA CRIADA COM SUCESSO')) &&
+                !textoNorm.includes('DADOS DE CARGA') && !textoNorm.includes('DOCUMENTOS INTERNACIONAIS')) {
+                divergencias.push('Tela incorreta capturada: a imagem mostra a confirmação de AWB em vez do Formulário preenchido da minuta.');
+                rejeitarCapturaFormularioInvalida(alvo, imagemBase64, divergencias);
+                return;
+            }
+
+            const iatasConhecidos = obterConjuntoIatasConhecidosMalha();
+
+            // Separa seções principais do formulário LATAM pelo texto reconhecido
+            const idxRota = textoNorm.search(/ROTA|AEROPORTOS|ORIGEM/);
+            const idxCarga = textoNorm.search(/DADOS DE CARGA|COMMODITY|CORREIO INTERNACIONAL/);
+            const idxSeguro = textoNorm.search(/SEGURO|APOLICE|SOMPO/);
+            const idxDocs = textoNorm.search(/DOCUMENTOS INTERNACIONAIS|CARREGAR ARQUIVO|BAIXAR MODELO/);
+
+            const trechoTopoRota = idxCarga > 0 ? textoNorm.slice(0, idxCarga) : textoNorm.slice(0, Math.min(textoNorm.length, 900));
+            const trechoApenasRota = (idxRota >= 0 && idxCarga > idxRota)
+                ? textoNorm.slice(idxRota, idxCarga)
+                : trechoTopoRota;
+            const trechoCarga = idxCarga >= 0
+                ? textoNorm.slice(idxCarga, idxSeguro > idxCarga ? idxSeguro : (idxDocs > idxCarga ? idxDocs : idxCarga + 900))
+                : textoNorm;
+            const trechoDocs = idxDocs >= 0 ? textoNorm.slice(idxDocs) : (idxSeguro >= 0 ? textoNorm.slice(idxSeguro) : textoNorm);
+
+            // 2. Validação de ORIGEM (GRU vs CGH na seção ROTA / AEROPORTOS)
+            const temGruRota = /\bGRU\b/.test(trechoApenasRota);
+            const temCghRota = /\bCGH\b/.test(trechoApenasRota);
+            if (esp.origemEsp === 'GRU' && temCghRota && !temGruRota) {
+                divergencias.push(`Origem divergente na captura: preenchido "CGH", mas o sistema exige "GRU".`);
+            } else if (esp.origemEsp === 'CGH' && temGruRota && !temCghRota) {
+                divergencias.push(`Origem divergente na captura: preenchido "GRU", mas o sistema exige "CGH".`);
+            }
+
+            // 3. Validação de DESTINO e RECEBEDOR (<IATA> - FEDEX ou IATA no bloco ROTA)
+            const iatasDetectadosRecebedorOuRota = new Set();
+            const regexRecebedorFedex = /\b([A-Z]{3})\s*[-–]\s*(?:FEDEX|I\s*&\s*I|Rodo| Transp|Log)/gi;
+            let mRec;
+            while ((mRec = regexRecebedorFedex.exec(trechoTopoRota)) !== null) {
+                const cod = mRec[1].toUpperCase();
+                if (cod !== 'YYS' && iatasConhecidos.has(cod)) {
+                    iatasDetectadosRecebedorOuRota.add(cod);
+                }
+            }
+            const tokensRota = trechoApenasRota.split(/[^A-Z0-9]+/).filter(Boolean);
+            for (const tok of tokensRota) {
+                if (tok.length === 3 && iatasConhecidos.has(tok)) {
+                    iatasDetectadosRecebedorOuRota.add(tok);
+                }
+            }
+
+            if (iatasDetectadosRecebedorOuRota.size > 0) {
+                const temEsperado = iatasDetectadosRecebedorOuRota.has(esp.destinoIataEsp) || iatasDetectadosRecebedorOuRota.has(esp.recebedorIataEsp);
+                if (!temEsperado) {
+                    const iataErrado = Array.from(iatasDetectadosRecebedorOuRota)[0];
+                    divergencias.push(`Destino divergente na captura: o formulário está preenchido para "${iataErrado}", mas a minuta atual é "${esp.destinoIataEsp}" (${alvo.destino}).`);
+                }
+            }
+
+            // 4. Validação de PRODUTO / SERVIÇO (RESBA / VLZBA / ST2BA..ST7BA / EF3BA..EF5BA)
+            const matchProdCode = trechoCarga.match(/\b(RESBA|VLZBA|ST[2357]BA|EF[345]BA)\b/);
+            if (matchProdCode) {
+                const codLido = matchProdCode[1];
+                if (!produtoCompativelPortalLatam(codLido, esp.produtoTxtEsp, esp.prodCodeEsp)) {
+                    divergencias.push(`Produto/Serviço divergente na captura: preenchido "${codLido}", mas o sistema exige "${esp.produtoTxtEsp} (${esp.prodCodeEsp})".`);
+                }
+            }
+
+            // 5. Validação de VOLUME e PESO (linha de inputs em DADOS DE CARGA: [Volumes] [Peso] [32] [28] [22])
+            let volumeLido = null;
+            let pesoLido = null;
+
+            // 5A. Busca pelo padrão da linha de inputs seguida das medidas padrão 32 28 22
+            const regexLinhaCarga = /(?:^|\s)(\d{1,4})\s+(\d{1,5}(?:[.,]\d{1,3})?)\s+32\s+(?:28|22)\b/m;
+            const mLinhaCarga = trechoCarga.match(regexLinhaCarga);
+            if (mLinhaCarga) {
+                volumeLido = parseInt(mLinhaCarga[1]);
+                pesoLido = parseNumeroUniversal(mLinhaCarga[2]);
+            }
+
+            // 5B. Caso não tenha casado por texto corrido, usa as coordenadas (bounding boxes) das palavras na faixa das medidas 32 / 28 / 22
+            if ((volumeLido === null || pesoLido === null) && Array.isArray(ocrResult.data.words)) {
+                const palavrasNum = ocrResult.data.words
+                    .map(w => ({
+                        raw: String(w.text || '').trim(),
+                        limpo: String(w.text || '').trim().replace(/[^0-9.,]/g, ''),
+                        x0: w.bbox?.x0 || 0,
+                        x1: w.bbox?.x1 || 0,
+                        yc: ((w.bbox?.y0 || 0) + (w.bbox?.y1 || 0)) / 2
+                    }))
+                    .filter(w => /^\d+(?:[.,]\d+)?$/.test(w.limpo));
+
+                // Procura uma palavra "32" (Comprimento) acompanhada de "28" ou "22" na mesma faixa horizontal (yc próximo)
+                for (const w32 of palavrasNum) {
+                    if (w32.limpo !== '32' || w32.x0 < prep.width * 0.35 || w32.x0 > prep.width * 0.72) continue;
+                    const naMesmaLinha = palavrasNum
+                        .filter(p => Math.abs(p.yc - w32.yc) <= Math.max(22, prep.height * 0.022))
+                        .sort((a, b) => a.x0 - b.x0);
+                    const tem28ou22Direita = naMesmaLinha.some(p => (p.limpo === '28' || p.limpo === '22') && p.x0 > w32.x0);
+                    if (!tem28ou22Direita) continue;
+
+                    const aEsquerdaDo32 = naMesmaLinha.filter(p => p.x1 < w32.x0 - 10);
+                    if (aEsquerdaDo32.length >= 2) {
+                        const candVol = parseInt(aEsquerdaDo32[0].limpo);
+                        const candPeso = parseNumeroUniversal(aEsquerdaDo32[1].limpo);
+                        if (!isNaN(candVol) && candVol > 0 && !isNaN(candPeso) && candPeso > 0) {
+                            volumeLido = candVol;
+                            pesoLido = candPeso;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (volumeLido !== null && !isNaN(volumeLido) && volumeLido !== esp.volumeEsp) {
+                divergencias.push(`Volume divergente na captura: preenchido "${volumeLido} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
+            }
+            if (pesoLido !== null && !isNaN(pesoLido) && !pesoCompativelPortalLatam(pesoLido, esp.pesoEsp)) {
+                divergencias.push(`Peso divergente na captura: preenchido "${pesoLido} kg", mas o sistema exige "${esp.pesoEsp} kg".`);
+            }
+
+            // 5C. Cruzamento com destinos irmãos (ex: FORA vs FORA FORMAL, BSBA SACA vs BSBA CAIXAS):
+            // Se volumeLido/pesoLido não foram extraídos pela régua 32x28x22, verifica se o trecho de carga contém exatamente o Volume+Peso de um bloco irmão e não contém o da minuta atual
+            if (volumeLido === null && pesoLido === null) {
+                const irmaosMesmoIata = outrosBlocos.filter(o => o.esp.destinoIataEsp === esp.destinoIataEsp);
+                for (const irmao of irmaosMesmoIata) {
+                    const volIrmao = irmao.esp.volumeEsp;
+                    const pesoIrmaoArred = Math.round(irmao.esp.pesoEsp);
+                    const pesoAlvoArred = Math.round(esp.pesoEsp);
+                    if (volIrmao !== esp.volumeEsp && pesoIrmaoArred !== pesoAlvoArred) {
+                        const regexParIrmao = new RegExp(`\\b${volIrmao}\\s+${pesoIrmaoArred}(?:\\b|[.,])`);
+                        const regexParAlvo = new RegExp(`\\b${esp.volumeEsp}\\s+(?:${pesoAlvoArred}|${String(esp.pesoEsp).replace('.', '[.,]')})\\b`);
+                        if (regexParIrmao.test(trechoCarga) && !regexParAlvo.test(trechoCarga)) {
+                            divergencias.push(`Dados de Carga divergentes: a captura apresenta Volume (${volIrmao}) e Peso (${irmao.esp.pesoEsp} kg) pertencentes a "${irmao.minuta.destino}", e não a "${alvo.destino}" (${esp.volumeEsp} vol / ${esp.pesoEsp} kg).`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 6. Validação das AWBs carregadas do arquivo Excel (seção DOCUMENTOS INTERNACIONAIS)
+            const cnpjsFixos = new Set(['00676486000182', '5200000503', '10970887003039']);
+            const tokensNumericosDocs = (trechoDocs.match(/\b\d{10,14}\b/g) || [])
+                .filter(num => !cnpjsFixos.has(num) && !num.startsWith('00676486'));
+
+            // 6A. Verifica se alguma AWB visível na captura pertence à planilha Excel de OUTRA minuta da operação
+            if (tokensNumericosDocs.length > 0) {
+                for (const numDoc of tokensNumericosDocs) {
+                    if (esp.excelInfo.temPlanilha && awbCompativelComListaEsperada(numDoc, esp.excelInfo.awbs, 2)) {
+                        continue;
+                    }
+                    const blocoDono = outrosBlocos.find(o =>
+                        o.esp.excelInfo.temPlanilha &&
+                        o.esp.excelInfo.awbs.length > 0 &&
+                        awbCompativelComListaEsperada(numDoc, o.esp.excelInfo.awbs, 1)
+                    );
+                    if (blocoDono) {
+                        divergencias.push(`AWBs do arquivo Excel inválidas: a AWB ${numDoc} carregada no formulário pertence ao destino "${blocoDono.minuta.destino}", e não a "${alvo.destino}".`);
+                        break;
+                    }
+                }
+            }
+
+            // 6B. Se a minuta atual possui planilha Excel com AWBs, verifica se há AWBs estranhas na tabela de Documentos Internacionais
+            if (esp.excelInfo.temPlanilha && esp.excelInfo.awbs.length > 0) {
+                if (idxDocs >= 0 && (trechoDocs.includes('NENHUM DOCUMENTO') || trechoDocs.includes('SEM DOCUMENTOS') || trechoDocs.includes('NO RECORDS'))) {
+                    divergencias.push(`Nenhuma AWB foi carregada na seção Documentos Internacionais (esperado: ${esp.excelInfo.awbs.length} AWB(s) do arquivo de ${alvo.destino}).`);
+                } else if (tokensNumericosDocs.length > 0) {
+                    const awbsEstranhas = tokensNumericosDocs.filter(num => num.length === 12 && !awbCompativelComListaEsperada(num, esp.excelInfo.awbs, 2));
+                    if (awbsEstranhas.length > 0 && !divergencias.some(d => d.includes('AWBs do arquivo Excel'))) {
+                        divergencias.push(`AWB carregada no formulário (${awbsEstranhas[0]}) não confere com as AWBs do arquivo de "${alvo.destino}".`);
+                    }
+                }
+            }
+
+            if (divergencias.length > 0) {
+                rejeitarCapturaFormularioInvalida(alvo, imagemBase64, divergencias);
+            } else if (ass) {
+                imagensFormValidadasOkSet.add(`${alvo.id}::${ass}`);
+                delete alvo._capturaFormInvalidaMotivo;
+            }
+        }
+
         // Atualiza instantaneamente os botões de captura e o campo AWB na tela de detalhe sem precisar dar F5
         function atualizarUICapturasMinutaAberta(novoAwbOpcional = '') {
             if (!minutaAberta) return;
@@ -4825,6 +5433,11 @@
                 btnForm.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500';
                 btnForm.removeAttribute('disabled');
                 btnForm.onclick = () => abrirModalImagemPorDestino(iata3, destBruto, 'FORM');
+            } else if (btnForm) {
+                btnForm.textContent = '⏳ Form. Pendente';
+                btnForm.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
+                btnForm.setAttribute('disabled', 'disabled');
+                btnForm.onclick = null;
             }
 
             const btnAwb = document.getElementById(`btn-previa-awb-${iata3}`) || document.querySelector('[id^="btn-previa-awb-"]');
@@ -4833,6 +5446,11 @@
                 btnAwb.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600';
                 btnAwb.removeAttribute('disabled');
                 btnAwb.onclick = () => abrirModalImagemPorDestino(iata3, destBruto, 'AWB');
+            } else if (btnAwb) {
+                btnAwb.textContent = '⏳ AWB Pendente';
+                btnAwb.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
+                btnAwb.setAttribute('disabled', 'disabled');
+                btnAwb.onclick = null;
             }
 
             const awbFinal = novoAwbOpcional || (minutaAberta.dados && minutaAberta.dados.awb) || '';
@@ -4848,9 +5466,36 @@
             const prefixo = tipo === 'FORM' ? 'minuta_img_form_' : 'minuta_img_awb_';
             const campo = tipo === 'FORM' ? 'img_form' : 'img_awb';
 
-            const alvo = encontrarMinutaLatamPorCaptura(iata3, bruto, awb);
+            // Se a tela de detalhe de uma minuta LATAM estiver aberta (ou houver alvo ativo clicado em "Preencher Minuta"),
+            // valida a captura de FORM contra essa minuta ativa para impedir que captura de outro voo passe despercebida!
+            let alvo = null;
+            const detailViewAberta = !document.getElementById('detail-view').classList.contains('hidden');
+            if (tipo === 'FORM' && detailViewAberta && minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM') {
+                alvo = minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
+            } else if (tipo === 'FORM') {
+                const alvoClicado = lerAlvoCapturaLatam();
+                if (alvoClicado && alvoClicado.id && (!alvoClicado.operacao || alvoClicado.operacao === operacaoAtual)) {
+                    alvo = minutasDb.find(m => m.id === alvoClicado.id) || null;
+                }
+            }
+            if (!alvo) {
+                alvo = encontrarMinutaLatamPorCaptura(iata3, bruto, awb);
+            }
+
             const i3Base = extrairIataBase(alvo?.destino || bruto || iata3 || '');
             const ehUnicoIataNaOp = contarMinutasLatamMesmoIataNaOp(i3Base, alvo?.operacao || operacaoAtual) === 1;
+
+            // Validação síncrona imediata da 1ª captura (FORM) antes de aceitar/salvar
+            if (tipo === 'FORM' && alvo) {
+                const esp = obterDadosEsperadosMinutaLatam(alvo);
+                const outrosBlocos = obterOutrosBlocosLatamDaOperacao(alvo);
+                const divergenciasSincronas = validarMetadadosSincronoCapturaForm(alvo, detail, esp, outrosBlocos);
+                if (divergenciasSincronas.length > 0) {
+                    rejeitarCapturaFormularioInvalida(alvo, imagem, divergenciasSincronas);
+                    return;
+                }
+                delete alvo._capturaFormInvalidaMotivo;
+            }
 
             if (alvo) {
                 const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
@@ -4889,6 +5534,13 @@
                 if (supabaseClient) {
                     salvarDadosMinutaPreservandoAnexos(alvo);
                 }
+
+                // Dispara a análise OCR 100% invisível em segundo plano sobre a imagem capturada do formulário
+                if (tipo === 'FORM') {
+                    alvo._validandoCapturaFormPromise = executarAnaliseOcrInvisivelCapturaForm(alvo, imagem)
+                        .catch(() => {})
+                        .finally(() => { alvo._validandoCapturaFormPromise = null; });
+                }
             }
 
             atualizarUICapturasMinutaAberta(awb || '');
@@ -4900,7 +5552,7 @@
 
             renderCardsRelatorios();
             if (tipo === 'FORM') {
-                showToast(`Captura do formulário (${bruto || iata3 || alvo?.destino || ''}) atualizada em tempo real!`);
+                showToast(`Captura do formulário (${ alvo?.destino || bruto || iata3 || ''}) atualizada em tempo real!`);
             } else {
                 showToast(`AWB ${awb || ''} e captura sincronizados em tempo real!`);
             }
