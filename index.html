@@ -34,6 +34,7 @@
 
     <input type="file" id="file-upload-excel" accept=".xlsx, .xls, .zip" class="hidden" onchange="processarImportacaoUniversal(event)">
     <input type="file" id="file-upload-gol-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfGol(event)">
+    <input type="file" id="file-upload-formal-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfFormalNoMinutas(event)">
 
     <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -1155,6 +1156,15 @@
                 cc: 'jaqueline.borges@fedex.com; josesilva3@fedex.com',
                 assunto: 'Envio de Minutas FedEx — Operação [Data]',
                 corpo: 'Prezada equipe da GOL,\n\nEspero que estejam bem.\n\nDevido à instabilidade no site da GOLLOG, seguem em anexo as minutas da FedEx feitas manualmente referentes à operação de hoje ([Data]).\n\nGentileza realizar a emissão e nos retornar com a numeração das AWBs correspondentes.\n\nPermanecemos à disposição para eventuais dúvidas ou esclarecimentos.\n\nAtenciosamente,'
+            },
+            {
+                id: 'EMAIL_FORMAL_GRU',
+                cia: 'FORMAL',
+                destino: 'FOR FORMAL',
+                para: 'FORA_INTL_Aereo@corp.ds.fedex.com; vcp-clh@corp.ds.fedex.com',
+                cc: 'BR-Air-Linehaul@corp.ds.fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                assunto: 'Embarque Formal [Data]',
+                corpo: 'Prezados,\n\nEspero que estejam bem.\n\nSegue em anexo a documentação completa e a minuta aérea referentes ao Embarque Formal (FOR FORMAL) da operação do dia [Data].\n\nResumo da Remessa Formal:\n• Destino: FORA FORMAL (Fortaleza)\n• AWB Aérea (LATAM): [AWB_AEREA]\n• AWB FedEx: [AWB_FEDEX]\n• Nota Fiscal (NF-e): [NF_NUMERO]\n• DUIMP: [DUIMP]\n• Importador: [IMPORTADOR]\n• Volumes / Peso: [VOLUMES] vol / [PESO] kg\n• Valor Total da Nota Fiscal: [VALOR_NF]\n\nQualquer dúvida, permanecemos à disposição.\n\nAtenciosamente,'
             }
         ];
 
@@ -1774,11 +1784,12 @@
                 const qtd = minsUser.length;
                 const qtdGol = minsUser.filter(m => (m.cia || '').toUpperCase() === 'GOL').length;
                 const qtdLatam = minsUser.filter(m => (m.cia || '').toUpperCase() === 'LATAM').length;
+                const esforçoIa = minsUser.reduce((acc, m) => acc + calcularPesoEsforcoMinutaIa(m), 0);
                 return `
                 <div class="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-2.5 border border-slate-100 dark:border-slate-700 flex justify-between items-center">
                     <div class="min-w-0 pr-2">
                         <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block truncate">${op}</span>
-                        <span class="text-[10px] text-slate-400 font-semibold">${qtdLatam} LATAM • ${qtdGol} GOL</span>
+                        <span class="text-[10px] text-slate-400 font-semibold">${qtdLatam} LATAM • ${qtdGol} GOL <span class="text-indigo-500 dark:text-indigo-400 font-bold">(${esforçoIa.toFixed(1)} pts IA)</span></span>
                     </div>
                     <span class="text-sm font-black text-indigo-600 dark:text-indigo-400">${qtd}</span>
                 </div>`;
@@ -1981,7 +1992,9 @@
                             </button>
                         `).join('')}
                     </div>
-                </div>`;
+                    ${buildAiLatamCaptureStatusStripHtml(minutaAberta, imgForm, imgAwb)}
+                </div>
+                ${ehMinutaFormal(minutaAberta) ? buildFormalMinutaExtraSectionHtml(minutaAberta) : ''}`;
             } else {
                 const pdfGolSalvo = obterPdfGolMinuta(minutaAberta);
                 if (pdfGolSalvo) salvarSessionSeguro(`minuta_pdf_gol_id_${minutaAberta.id}`, pdfGolSalvo, minutaAberta.operacao || operacaoAtual);
@@ -2409,6 +2422,13 @@
                             existente.dados.doc_excel_b64 = novo.dados.doc_excel_b64;
                             existente.dados.doc_excel_nome = novo.dados.doc_excel_nome;
                             salvarSessionSeguro(`minuta_excel_latam_${(existente.destino || '').trim().toUpperCase()}`, novo.dados.doc_excel_b64);
+                        }
+                        if (novo.dados && novo.dados.doc_formal_pdf_b64) {
+                            if (!existente.dados) existente.dados = {};
+                            existente.dados.doc_formal_pdf_b64 = novo.dados.doc_formal_pdf_b64;
+                            existente.dados.doc_formal_pdf_nome = novo.dados.doc_formal_pdf_nome || 'FORMAL.pdf';
+                            if (novo.dados.formal_meta) existente.dados.formal_meta = novo.dados.formal_meta;
+                            salvarSessionSeguro(`minuta_pdf_formal_${(existente.destino || '').trim().toUpperCase()}`, novo.dados.doc_formal_pdf_b64);
                         }
                         qtdIguaisIgnorados++;
                     }
@@ -3438,6 +3458,14 @@
                     origem: 'GRU',
                     lista: minutasOp.filter(m => (m.cia || '').toUpperCase() === 'GOL'),
                     acaoClick: "gerarRelatorioGolEDispararEmail()"
+                },
+                {
+                    id: 'FORMAL_GRU',
+                    titulo: 'Relatório Formal (FOR FORMAL)',
+                    cia: 'LATAM',
+                    origem: 'FORMAL',
+                    lista: minutasOp.filter(m => ehMinutaFormal(m)),
+                    acaoClick: "gerarRelatorioFormalEDispararEmail()"
                 }
             ];
 
@@ -4063,7 +4091,28 @@
             }
         }
 
-        // ITEM 3: Distribuição Justa Ponderada (GOL = Peso 2 | LATAM = Peso 1)
+        // ITEM 6: Algoritmo IA de Distribuição Inteligente e Justa das Minutas
+        // Leva em conta que a minuta GOL exige preenchimento completo de formulário no portal GOLLOG + geração e anexo de PDF (Peso Base 3.0 + fator de complexidade),
+        // enquanto a minuta LATAM exige apenas 2 capturas (Peso Base 1.0, ou 1.3 para FOR FORMAL).
+        function calcularPesoEsforcoMinutaIa(m) {
+            if (!m) return 1.0;
+            const ehGol = (m.cia || '').toUpperCase() === 'GOL';
+            const pesoKg = parseNumeroUniversal(m.dados?.remessa?.Peso || 0);
+            const volNum = parseInt(m.dados?.remessa?.Volume || 1, 10) || 1;
+            const temLacre = Boolean(m.dados?.LACRE_ORIGINAL && String(m.dados.LACRE_ORIGINAL).trim() !== '' && String(m.dados.LACRE_ORIGINAL).trim() !== '-');
+            if (ehGol) {
+                let pts = 3.0;
+                if (temLacre) pts += 0.25; // Carimbo/validação de lacre no PDF GOL
+                if (pesoKg > 30) pts += 0.25; // Regra de 30kg GOL RÁPIDO + substituição automática no PDF
+                if (volNum >= 5) pts += 0.2;
+                return Math.round(pts * 100) / 100;
+            } else {
+                let pts = 1.0;
+                if (ehMinutaFormal(m)) pts += 0.35; // Conferência do PDF Formal + Relatório Formal
+                return Math.round(pts * 100) / 100;
+            }
+        }
+
         function distribuirMinutasComJustica(listaMinutas, opsSelecionados) {
             if (!opsSelecionados || opsSelecionados.length === 0) return [];
             const pesoCarga = {};
@@ -4078,7 +4127,7 @@
 
             const alteradas = [];
 
-            // 1. Contabiliza as minutas que já foram concluídas
+            // 1. Contabiliza as minutas que já foram concluídas (respeitando quem já trabalhou nelas)
             listaMinutas.forEach(m => {
                 if (m.status === 'CONCLUÍDA') {
                     const quemFez = (m.dados && m.dados.concluido_por) ? m.dados.concluido_por.toUpperCase() : (m.operador || '').toUpperCase();
@@ -4088,48 +4137,57 @@
                     }
                     if (pesoCarga[quemFez] !== undefined) {
                         const ehGol = (m.cia || '').toUpperCase() === 'GOL';
-                        pesoCarga[quemFez] += ehGol ? 2 : 1;
+                        const pts = calcularPesoEsforcoMinutaIa(m);
+                        pesoCarga[quemFez] = Math.round((pesoCarga[quemFez] + pts) * 100) / 100;
                         contagemTotal[quemFez] += 1;
                         if (ehGol) contagemGol[quemFez] += 1;
                     }
                 }
             });
 
-            // 2. Distribui primeiro as pendentes GOL (Peso 2 cada) para quem tem menos GOL / menor carga
-            const pendentesGol = listaMinutas.filter(m => m.status !== 'CONCLUÍDA' && (m.cia || '').toUpperCase() === 'GOL');
+            // 2. Ordena as pendentes GOL da mais complexa para a mais simples e distribui equitativamente
+            const pendentesGol = listaMinutas
+                .filter(m => m.status !== 'CONCLUÍDA' && (m.cia || '').toUpperCase() === 'GOL')
+                .sort((a, b) => calcularPesoEsforcoMinutaIa(b) - calcularPesoEsforcoMinutaIa(a));
+
             pendentesGol.forEach(m => {
                 opsSelecionados.sort((a, b) => {
                     if (contagemGol[a] !== contagemGol[b]) return contagemGol[a] - contagemGol[b];
-                    if (pesoCarga[a] !== pesoCarga[b]) return pesoCarga[a] - pesoCarga[b];
+                    if (Math.abs(pesoCarga[a] - pesoCarga[b]) > 0.05) return pesoCarga[a] - pesoCarga[b];
                     return contagemTotal[a] - contagemTotal[b];
                 });
                 const escolhido = opsSelecionados[0];
+                const pts = calcularPesoEsforcoMinutaIa(m);
                 m.operador = escolhido;
                 contagemGol[escolhido] += 1;
                 contagemTotal[escolhido] += 1;
-                pesoCarga[escolhido] += 2;
+                pesoCarga[escolhido] = Math.round((pesoCarga[escolhido] + pts) * 100) / 100;
                 alteradas.push(m);
             });
 
-            // 3. Distribui as pendentes LATAM (Peso 1 cada) priorizando quem tem MENOR PESO DE CARGA acumulado
-            // Assim, quem pegou 2 GOL (4 pts) recebe menos LATAM para empatar em pontos e ficar com menos minutas no total!
-            const pendentesLatam = listaMinutas.filter(m => m.status !== 'CONCLUÍDA' && (m.cia || '').toUpperCase() !== 'GOL');
+            // 3. Distribui as pendentes LATAM priorizando quem está com MENOR ESFORÇO ACUMULADO (pesoCarga),
+            // compensando automaticamente quem recebeu uma minuta GOL a mais com menos minutas LATAM!
+            const pendentesLatam = listaMinutas
+                .filter(m => m.status !== 'CONCLUÍDA' && (m.cia || '').toUpperCase() !== 'GOL')
+                .sort((a, b) => calcularPesoEsforcoMinutaIa(b) - calcularPesoEsforcoMinutaIa(a));
+
             pendentesLatam.forEach(m => {
                 opsSelecionados.sort((a, b) => {
-                    if (pesoCarga[a] !== pesoCarga[b]) return pesoCarga[a] - pesoCarga[b];
+                    if (Math.abs(pesoCarga[a] - pesoCarga[b]) > 0.05) return pesoCarga[a] - pesoCarga[b];
                     return contagemTotal[a] - contagemTotal[b];
                 });
                 const escolhido = opsSelecionados[0];
+                const pts = calcularPesoEsforcoMinutaIa(m);
                 m.operador = escolhido;
                 contagemTotal[escolhido] += 1;
-                pesoCarga[escolhido] += 1;
+                pesoCarga[escolhido] = Math.round((pesoCarga[escolhido] + pts) * 100) / 100;
                 alteradas.push(m);
             });
 
             return alteradas;
         }
 
-        // Balanceia apenas minutas novas adicionadas numa atualização incremental
+        // Balanceia apenas minutas novas adicionadas numa atualização incremental usando o mesmo motor IA
         function distribuirApenasNovasMinutasComJustica(todasDaOp, novasMinutas, opsSelecionados) {
             if (!opsSelecionados || opsSelecionados.length === 0) return;
             const pesoCarga = {};
@@ -4148,37 +4206,46 @@
                     const op = (m.operador || '').toUpperCase();
                     if (pesoCarga[op] !== undefined) {
                         const ehGol = (m.cia || '').toUpperCase() === 'GOL';
-                        pesoCarga[op] += ehGol ? 2 : 1;
+                        const pts = calcularPesoEsforcoMinutaIa(m);
+                        pesoCarga[op] = Math.round((pesoCarga[op] + pts) * 100) / 100;
                         contagemTotal[op] += 1;
                         if (ehGol) contagemGol[op] += 1;
                     }
                 }
             });
 
-            const novasGol = novasMinutas.filter(m => (m.cia || '').toUpperCase() === 'GOL');
+            const novasGol = novasMinutas
+                .filter(m => (m.cia || '').toUpperCase() === 'GOL')
+                .sort((a, b) => calcularPesoEsforcoMinutaIa(b) - calcularPesoEsforcoMinutaIa(a));
+
             novasGol.forEach(m => {
                 opsSelecionados.sort((a, b) => {
                     if (contagemGol[a] !== contagemGol[b]) return contagemGol[a] - contagemGol[b];
-                    if (pesoCarga[a] !== pesoCarga[b]) return pesoCarga[a] - pesoCarga[b];
+                    if (Math.abs(pesoCarga[a] - pesoCarga[b]) > 0.05) return pesoCarga[a] - pesoCarga[b];
                     return contagemTotal[a] - contagemTotal[b];
                 });
                 const escolhido = opsSelecionados[0];
+                const pts = calcularPesoEsforcoMinutaIa(m);
                 m.operador = escolhido;
                 contagemGol[escolhido] += 1;
                 contagemTotal[escolhido] += 1;
-                pesoCarga[escolhido] += 2;
+                pesoCarga[escolhido] = Math.round((pesoCarga[escolhido] + pts) * 100) / 100;
             });
 
-            const novasLatam = novasMinutas.filter(m => (m.cia || '').toUpperCase() !== 'GOL');
+            const novasLatam = novasMinutas
+                .filter(m => (m.cia || '').toUpperCase() !== 'GOL')
+                .sort((a, b) => calcularPesoEsforcoMinutaIa(b) - calcularPesoEsforcoMinutaIa(a));
+
             novasLatam.forEach(m => {
                 opsSelecionados.sort((a, b) => {
-                    if (pesoCarga[a] !== pesoCarga[b]) return pesoCarga[a] - pesoCarga[b];
+                    if (Math.abs(pesoCarga[a] - pesoCarga[b]) > 0.05) return pesoCarga[a] - pesoCarga[b];
                     return contagemTotal[a] - contagemTotal[b];
                 });
                 const escolhido = opsSelecionados[0];
+                const pts = calcularPesoEsforcoMinutaIa(m);
                 m.operador = escolhido;
                 contagemTotal[escolhido] += 1;
-                pesoCarga[escolhido] += 1;
+                pesoCarga[escolhido] = Math.round((pesoCarga[escolhido] + pts) * 100) / 100;
             });
         }
 
@@ -4397,6 +4464,13 @@
                             salvarSessionSeguro(`minuta_excel_latam_${destUpper}`, docExcelB64);
                         }
 
+                        const docFormalPdfB64 = row.DOC_FORMAL_PDF_B64 || '';
+                        const docFormalPdfNome = row.DOC_FORMAL_PDF_NOME || '';
+                        const formalMetaObj = row.FORMAL_META || null;
+                        if (docFormalPdfB64) {
+                            salvarSessionSeguro(`minuta_pdf_formal_${destUpper}`, docFormalPdfB64);
+                        }
+
                         registrosLidos.push({
                             id: id,
                             operacao: operacaoAtual,
@@ -4411,6 +4485,9 @@
                                 awb: row.AWB_AEREO || '',
                                 doc_excel_b64: docExcelB64 || undefined,
                                 doc_excel_nome: docExcelNome || undefined,
+                                doc_formal_pdf_b64: docFormalPdfB64 || undefined,
+                                doc_formal_pdf_nome: docFormalPdfNome || undefined,
+                                formal_meta: formalMetaObj || undefined,
                                 remessa: {
                                     Origem: origemImportada,
                                     Volume: vol,
@@ -7187,6 +7264,356 @@
             setInterval(() => { if (usuarioLogado && !document.hidden) sincronizarTudoComBanco(false, false); }, 30000);
             if(window.lucide) setTimeout(() => { lucide.createIcons(); }, 100);
         }
+    
+        // =========================================================================
+        // MOTOR IA & FLUXO COMPLETO FOR FORMAL NO SISTEMA DE MINUTAS
+        // Itens 2, 5B, 6 e 8B
+        // =========================================================================
+
+        function ehMinutaFormal(m) {
+            if (!m) return false;
+            const destUp = String(m.destino || '').trim().toUpperCase();
+            const blocoId = String(m.dados?.BLOCO_ID || '').trim().toUpperCase();
+            return destUp.includes('FORMAL') || blocoId === 'FORTALEZA_FORMAL';
+        }
+
+        function obterPdfFormalMinuta(m) {
+            if (!m) return '';
+            const destUp = String(m.destino || '').trim().toUpperCase();
+            if (m.dados && m.dados.doc_formal_pdf_b64) {
+                return m.dados.doc_formal_pdf_b64;
+            }
+            const cached = lerSessionSeguro(`minuta_pdf_formal_${destUp}`, m.operacao || operacaoAtual);
+            if (cached) return cached;
+            // Também verifica se o Controle Operacional salvou no localStorage compartilhado
+            try {
+                const remessaRaw = localStorage.getItem('fedex_minutas_remessa_ativa');
+                if (remessaRaw) {
+                    const remessa = JSON.parse(remessaRaw);
+                    if (remessa && Array.isArray(remessa.blocks)) {
+                        const rowFormal = remessa.blocks.find(b => String(b.BLOCO_ID) === 'FORTALEZA_FORMAL' || String(b.DESTINO || '').toUpperCase().includes('FORMAL'));
+                        if (rowFormal && rowFormal.DOC_FORMAL_PDF_B64) {
+                            if (!m.dados) m.dados = {};
+                            m.dados.doc_formal_pdf_b64 = rowFormal.DOC_FORMAL_PDF_B64;
+                            m.dados.doc_formal_pdf_nome = rowFormal.DOC_FORMAL_PDF_NOME || 'FORMAL.pdf';
+                            if (rowFormal.FORMAL_META) m.dados.formal_meta = rowFormal.FORMAL_META;
+                            return rowFormal.DOC_FORMAL_PDF_B64;
+                        }
+                    }
+                }
+            } catch (e) {}
+            return '';
+        }
+
+        function buildAiLatamCaptureStatusStripHtml(minuta, imgForm, imgAwb) {
+            if (!minuta) return '';
+            const formOk = Boolean(imgForm && !minuta._capturaFormInvalidaMotivo);
+            const awbOk = Boolean(imgAwb && minuta.dados && minuta.dados.awb);
+            return `
+            <div class="px-5 py-2.5 bg-indigo-50/50 dark:bg-indigo-950/25 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-indigo-600 text-white font-extrabold text-[10px]">🤖 Auditoria Visual IA LATAM</span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium">
+                        ${formOk && awbOk
+                            ? '✅ 1ª Captura (Formulário: Rota, Volumes, Peso, Produto e Seguro) e 2ª Captura (AWB) validadas!'
+                            : (formOk
+                                ? '✅ 1ª Captura (Formulário) validada pela IA • Aguardando 2ª Captura (AWB)'
+                                : 'A IA confere automaticamente Destino, Volumes, Peso, Produto e AWB ao receber as capturas da extensão.')}
+                    </span>
+                </div>
+            </div>`;
+        }
+
+        function buildFormalMinutaExtraSectionHtml(m) {
+            const pdfFormal = obterPdfFormalMinuta(m);
+            const nomePdf = (m.dados && m.dados.doc_formal_pdf_nome) ? m.dados.doc_formal_pdf_nome : 'FORMAL.pdf';
+            const meta = (m.dados && m.dados.formal_meta) || {};
+            const valorMostrado = meta.valorTotalNf || m.dados?.remessa?.Valor || 0;
+            const estaConcluida = m.status === 'CONCLUÍDA';
+
+            return `
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border-2 border-purple-500/70 dark:border-purple-500/60 shadow-sm overflow-hidden mb-4">
+                <div class="bg-purple-50/80 dark:bg-purple-900/25 border-b border-purple-200 dark:border-purple-700/50 px-5 py-3 flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>📑 Embarque Formal (FOR FORMAL) — Documentação & Relatório Formal</span>
+                        </h3>
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                            ${pdfFormal
+                                ? `Documento Formal recebido (${nomePdf}) • Valor NF: R$ ${Number(valorMostrado || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${meta.nfNumero ? ' • NF ' + meta.nfNumero : ''}${meta.duimp ? ' • DUIMP ' + meta.duimp : ''}`
+                                : 'Anexe ou pré-visualize a documentação escaneada do Formal para enviar junto com a minuta no Relatório Formal.'}
+                        </p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-extrabold ${pdfFormal ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'}">
+                        ${pdfFormal ? '✅ Doc. Formal Anexado' : '⚠️ PDF Formal Pendente'}
+                    </span>
+                </div>
+                <div class="p-5 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <button type="button" onclick="abrirModalPreviaPdfFormal()"
+                            class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${pdfFormal ? 'bg-purple-600 hover:bg-purple-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed'}"
+                            ${pdfFormal ? '' : 'disabled'}>
+                            📄 Pré-visualizar Documento Formal
+                        </button>
+                        <button type="button" onclick="document.getElementById('file-upload-formal-pdf').click()"
+                            class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition">
+                            📎 ${pdfFormal ? 'Trocar PDF Formal' : 'Anexar PDF Formal'}
+                        </button>
+                    </div>
+                    <div>
+                        <button type="button" onclick="gerarRelatorioFormalEDispararEmail()"
+                            class="px-4 py-2.5 rounded-xl text-xs font-extrabold transition shadow-sm ${estaConcluida ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'}"
+                            ${estaConcluida ? '' : 'disabled'}
+                            title="${estaConcluida ? 'Gera o PDF da Minuta Formal e o e-mail .eml com a Documentação Formal + Minuta anexadas' : 'Conclua esta minuta primeiro para liberar o botão Gerar Relatório Formal'}">
+                            ${estaConcluida ? '📑 Gerar Relatório Formal (E-mail + 2 Anexos)' : '🔒 Conclua a Minuta p/ Liberar Relatório Formal'}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        window.processarUploadPdfFormalNoMinutas = function(event) {
+            const file = event.target.files && event.target.files[0];
+            event.target.value = '';
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const dataUri = e.target.result;
+                const alvo = minutaAberta && ehMinutaFormal(minutaAberta)
+                    ? minutaAberta
+                    : minutasDb.find(m => (!m.operacao || m.operacao === operacaoAtual) && ehMinutaFormal(m));
+                if (!alvo) {
+                    abrirModalSistema("Aviso", "Nenhuma minuta FOR FORMAL encontrada na operação atual.");
+                    return;
+                }
+                if (!alvo.dados) alvo.dados = {};
+                alvo.dados.doc_formal_pdf_b64 = dataUri;
+                alvo.dados.doc_formal_pdf_nome = file.name || 'FORMAL.pdf';
+                salvarSessionSeguro(`minuta_pdf_formal_${(alvo.destino || '').trim().toUpperCase()}`, dataUri);
+                await salvarDadosMinutaPreservandoAnexos(alvo);
+                showToast(`✅ Documento Formal "${file.name}" anexado à minuta ${alvo.destino}!`);
+                if (minutaAberta && minutaAberta.id === alvo.id) {
+                    abrirMinuta(alvo.id);
+                }
+                renderCardsRelatorios();
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.abrirModalPreviaPdfFormal = function() {
+            const alvo = (minutaAberta && ehMinutaFormal(minutaAberta))
+                ? minutaAberta
+                : minutasDb.find(m => (!m.operacao || m.operacao === operacaoAtual) && ehMinutaFormal(m));
+            const pdfFormal = obterPdfFormalMinuta(alvo);
+            if (!pdfFormal) {
+                abrirModalSistema("Aviso", "Nenhum PDF de Documentação Formal está anexado nesta minuta.");
+                return;
+            }
+            const nomeArquivo = (alvo && alvo.dados && alvo.dados.doc_formal_pdf_nome) || 'FORMAL.pdf';
+            document.getElementById('modal-previa-titulo').textContent = `📄 Documentação Formal — ${nomeArquivo}`;
+            document.getElementById('modal-previa-img').classList.add('hidden');
+            const iframePdf = document.getElementById('modal-previa-pdf');
+            iframePdf.classList.remove('hidden');
+            if (urlBlobPreviaPdfAtivo) URL.revokeObjectURL(urlBlobPreviaPdfAtivo);
+            const bytes = base64DataUriToUint8Array(pdfFormal);
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+            urlBlobPreviaPdfAtivo = URL.createObjectURL(blob);
+            iframePdf.src = urlBlobPreviaPdfAtivo;
+            const linkDownload = document.getElementById('modal-previa-download');
+            linkDownload.href = urlBlobPreviaPdfAtivo;
+            linkDownload.download = nomeArquivo;
+            document.getElementById('modal-previa-captura').classList.remove('hidden');
+        };
+
+        window.gerarRelatorioFormalEDispararEmail = async function() {
+            if (!operacaoAtual) {
+                abrirModalSistema("Aviso", "Selecione ou crie uma operação primeiro.");
+                return;
+            }
+            const minutasFormais = minutasDb.filter(m => (!m.operacao || m.operacao === operacaoAtual) && ehMinutaFormal(m));
+            if (minutasFormais.length === 0) {
+                abrirModalSistema("Sem Demanda Formal", "Não há nenhuma minuta FOR FORMAL nesta operação.");
+                return;
+            }
+            const pendentes = minutasFormais.filter(m => m.status !== 'CONCLUÍDA');
+            if (pendentes.length > 0) {
+                abrirModalSistema("Trava de Segurança 🔒", `Conclua a minuta ${pendentes.map(m => m.destino).join(', ')} antes de gerar o Relatório Formal.`);
+                return;
+            }
+
+            const mFormal = minutasFormais[0];
+            await garantirAnexosMinutaNoCache(mFormal);
+
+            const imgForm = obterImagemMinuta(mFormal, 'FORM');
+            const imgAwb = obterImagemMinuta(mFormal, 'AWB');
+            if (!imgForm || !imgAwb) {
+                abrirModalSistema("Capturas Pendentes 📸", `A minuta "${mFormal.destino}" precisa estar com as 2 capturas (Formulário + AWB) antes de gerar o Relatório Formal.`);
+                return;
+            }
+
+            const pdfFormalDoc = obterPdfFormalMinuta(mFormal);
+            if (!pdfFormalDoc) {
+                abrirModalSistema(
+                    "Documento Formal Pendente 📄",
+                    "Anexe o PDF escaneado da documentação do Formal (FORMAL.pdf) para que ele seja enviado junto com a minuta no e-mail do Embarque Formal.",
+                    () => { document.getElementById('file-upload-formal-pdf').click(); }
+                );
+                return;
+            }
+
+            try {
+                showToast('Gerando PDF da Minuta Formal + E-mail Embarque Formal...');
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+                const larguraPagina = 210;
+                const alturaPagina = 297;
+                const margemX = 10;
+                const larguraUtil = larguraPagina - (margemX * 2);
+                const alturaUtil = alturaPagina - 16;
+
+                const dProc = aplicarRegrasMalhaEInjetarBases(mFormal);
+                let dimF = await carregarDimensoesImagem(imgForm);
+                let dimA = await carregarDimensoesImagem(imgAwb);
+
+                let hF = (dimF.height * larguraUtil) / dimF.width;
+                let hA = (dimA.height * larguraUtil) / dimA.width;
+
+                const destinoTexto = (mFormal.destino || 'FORA FORMAL').trim().toUpperCase();
+                const lacreBruto = String(dProc.remessa?.Lacre || mFormal.dados?.LACRE_ORIGINAL || '').trim();
+                const temLacre = lacreBruto && lacreBruto !== '-' && lacreBruto.toLowerCase() !== 'undefined';
+
+                const alturaCabecalhoTexto = temLacre ? 14 : 9;
+                const alturaTotalNecessaria = hF + hA + alturaCabecalhoTexto + 6;
+
+                let fatorEscala = 1;
+                if (alturaTotalNecessaria > alturaUtil) {
+                    fatorEscala = alturaUtil / alturaTotalNecessaria;
+                    hF *= fatorEscala;
+                    hA *= fatorEscala;
+                }
+
+                let cursorY = 8;
+                doc.addImage(imgForm, 'JPEG', margemX, cursorY, larguraUtil, hF);
+                cursorY += hF + 4;
+                doc.addImage(imgAwb, 'JPEG', margemX, cursorY, larguraUtil, hA);
+                cursorY += hA + 5;
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14 * Math.min(fatorEscala, 1));
+                doc.setTextColor(15, 23, 42);
+                doc.text(destinoTexto, margemX, cursorY);
+
+                if (temLacre) {
+                    cursorY += 6;
+                    doc.text(`LACRE: ${lacreBruto}`, margemX, cursorY);
+                }
+
+                const { dataBarra, dataTracoCurta } = obterDatasOperacaoFormatadas();
+                const nomePdfMinutaFormal = `MINUTA FEDEX FOR FORMAL ${dataTracoCurta}.pdf`;
+                const pdfMinutaDataUri = doc.output('datauristring');
+                doc.save(nomePdfMinutaFormal);
+
+                // Prepara os dados da remessa formal para preencher o e-mail profissional
+                const meta = (mFormal.dados && mFormal.dados.formal_meta) || {};
+                const awbAerea = (mFormal.dados && mFormal.dados.awb) || 'Conforme Minuta Anexa';
+                const awbFedex = (Array.isArray(meta.awbsFedex) && meta.awbsFedex.length > 0)
+                    ? meta.awbsFedex.join(', ')
+                    : (meta.awbFormal || '78945738480');
+                const nfNum = meta.nfNumero || '13233';
+                const duimpStr = meta.duimp || '26BR0002168063-0';
+                const importadorStr = meta.importador || 'TECLAV - TECNOLOGIA E LAVAGEM INDUSTRIAL LTDA';
+                const volStr = String(mFormal.dados?.remessa?.Volume || 2);
+                const pesoStr = Number(mFormal.dados?.remessa?.Peso || 15.5).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+                const valTotalNum = Number(meta.valorTotalNf || mFormal.dados?.remessa?.Valor || 24785.22);
+                const valTotalFormatado = valTotalNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                const cfg = emailsConfigDb.find(e => e.id === 'EMAIL_FORMAL_GRU' || (e.cia || '').toUpperCase() === 'FORMAL')
+                         || DEFAULT_EMAILS_CONFIG.find(e => e.id === 'EMAIL_FORMAL_GRU')
+                         || {
+                             para: 'FORA_INTL_Aereo@corp.ds.fedex.com; vcp-clh@corp.ds.fedex.com',
+                             cc: 'BR-Air-Linehaul@corp.ds.fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                             assunto: 'Embarque Formal [Data]',
+                             corpo: ''
+                         };
+
+                const para = (cfg.para || 'FORA_INTL_Aereo@corp.ds.fedex.com; vcp-clh@corp.ds.fedex.com').trim();
+                const cc = (cfg.cc || 'BR-Air-Linehaul@corp.ds.fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com').trim();
+                const assuntoFinal = (cfg.assunto || `Embarque Formal ${dataBarra}`).replace(/\[Data\]/gi, dataBarra);
+
+                let corpoTexto = cfg.corpo || DEFAULT_EMAILS_CONFIG.find(e => e.id === 'EMAIL_FORMAL_GRU').corpo;
+                corpoTexto = corpoTexto
+                    .replace(/\[Data\]/gi, dataBarra)
+                    .replace(/\[AWB_AEREA\]/gi, awbAerea)
+                    .replace(/\[AWB_FEDEX\]/gi, awbFedex)
+                    .replace(/\[NF_NUMERO\]/gi, nfNum)
+                    .replace(/\[DUIMP\]/gi, duimpStr)
+                    .replace(/\[IMPORTADOR\]/gi, importadorStr)
+                    .replace(/\[VOLUMES\]/gi, volStr)
+                    .replace(/\[PESO\]/gi, pesoStr)
+                    .replace(/\[VALOR_NF\]/gi, valTotalFormatado);
+
+                const htmlCompleto = montarHtmlEmailComAssinaturaFedEx(corpoTexto);
+                const htmlBase64 = quebrarBase64Em76Colunas(btoa(unescape(encodeURIComponent(htmlCompleto))));
+
+                const nomeDocFormalAnexo = (mFormal.dados && mFormal.dados.doc_formal_pdf_nome)
+                    ? mFormal.dados.doc_formal_pdf_nome
+                    : `DOCUMENTACAO FORMAL NF ${nfNum}.pdf`;
+
+                const listaAnexos = [
+                    { nomeArquivo: nomeDocFormalAnexo, dataUri: pdfFormalDoc },
+                    { nomeArquivo: nomePdfMinutaFormal, dataUri: pdfMinutaDataUri }
+                ];
+
+                const boundary = '----=_NextPart_FedEx_Formal_' + Date.now();
+                const linhasEml = [
+                    `To: ${para}`,
+                    cc ? `Cc: ${cc}` : null,
+                    `Subject: ${codificarAssuntoMimeUtf8(assuntoFinal)}`,
+                    `X-Unsent: 1`,
+                    `MIME-Version: 1.0`,
+                    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+                    ``,
+                    `--${boundary}`,
+                    `Content-Type: text/html; charset="utf-8"`,
+                    `Content-Transfer-Encoding: base64`,
+                    ``,
+                    htmlBase64,
+                    ``
+                ];
+
+                for (const anexo of listaAnexos) {
+                    const pdfBase64Limpo = quebrarBase64Em76Colunas(anexo.dataUri);
+                    linhasEml.push(
+                        `--${boundary}`,
+                        `Content-Type: application/pdf; name="${anexo.nomeArquivo}"`,
+                        `Content-Transfer-Encoding: base64`,
+                        `Content-Disposition: attachment; filename="${anexo.nomeArquivo}"`,
+                        ``,
+                        pdfBase64Limpo,
+                        ``
+                    );
+                }
+                linhasEml.push(`--${boundary}--`, ``);
+
+                const conteudoFinalEml = linhasEml.filter(l => l !== null).join('\r\n');
+                const blobEml = new Blob([conteudoFinalEml], { type: 'message/rfc822' });
+                const urlEml = URL.createObjectURL(blobEml);
+                const aEml = document.createElement('a');
+                aEml.href = urlEml;
+                aEml.download = `Embarque Formal ${dataTracoCurta}.eml`;
+                document.body.appendChild(aEml);
+                aEml.click();
+                document.body.removeChild(aEml);
+                setTimeout(() => URL.revokeObjectURL(urlEml), 3000);
+
+                showToast('✅ Relatório Formal gerado com os 2 PDFs anexados no e-mail!');
+            } catch (err) {
+                console.error(err);
+                abrirModalSistema("Erro ao Gerar Relatório Formal", err.message || String(err));
+            }
+        };
+
     </script>
 </body>
 </html>
