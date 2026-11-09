@@ -835,25 +835,14 @@
             ).length;
         }
 
-        function obterIrmaosMesmoIataNaOp(minuta) {
-            if (!minuta || (minuta.cia || '').toUpperCase() !== 'LATAM') return [];
-            const opAlvo = (minuta.operacao || operacaoAtual || '').trim();
-            const i3 = extrairIataBase(minuta.destino);
-            return minutasDb.filter(m =>
-                m.id !== minuta.id &&
-                (!opAlvo || !m.operacao || m.operacao === opAlvo) &&
-                (m.cia || '').toUpperCase() === 'LATAM' &&
-                extrairIataBase(m.destino) === i3
-            );
-        }
-
-        // Registra exatamente qual minuta (pelo ID único e destino completo) o operador abriu ou clicou em "Preencher Minuta",
-        // impedindo que destinos irmãos (ex: BSBA SACA vs BSBA CAIXAS, FORA vs FOR FORMAL) recebam a captura um do outro!
+        // Registra exatamente qual minuta (pelo ID único, BLOCO_ID e destino completo) o operador abriu ou clicou em "Preencher Minuta",
+        // garantindo roteamento determinístico por ID único para cada bloco (SACA, CAIXAS, FORMAL, DG, PALLET).
         let ultimoAlvoCapturaLatam = null;
         function registrarAlvoCapturaLatam(minuta) {
             if (!minuta || (minuta.cia || '').toUpperCase() !== 'LATAM') return;
             ultimoAlvoCapturaLatam = {
                 id: minuta.id,
+                blocoId: (minuta.dados && minuta.dados.BLOCO_ID) ? String(minuta.dados.BLOCO_ID).trim().toUpperCase() : '',
                 destino: (minuta.destino || '').trim().toUpperCase(),
                 iata3: extrairIataBase(minuta.destino),
                 operacao: minuta.operacao || operacaoAtual || '',
@@ -957,7 +946,6 @@
             if (!minuta) return;
             const opM = minuta.operacao || operacaoAtual || '';
             const destBruto = (minuta.destino || '').trim().toUpperCase();
-            const iata3 = extrairIataBase(destBruto);
             removerSessionSeguro(`minuta_img_form_id_${minuta.id}`, opM);
             removerSessionSeguro(`minuta_img_awb_id_${minuta.id}`, opM);
             removerSessionSeguro(`minuta_pdf_gol_id_${minuta.id}`, opM);
@@ -965,12 +953,6 @@
             removerSessionSeguro(`minuta_img_form_${destBruto}`, opM);
             removerSessionSeguro(`minuta_img_awb_${destBruto}`, opM);
             removerSessionSeguro(`minuta_pdf_gol_${destBruto}`, opM);
-            removerSessionSeguro(`minuta_excel_latam_${destBruto}`, opM);
-            if (iata3) {
-                removerSessionSeguro(`minuta_img_form_${iata3}`, opM);
-                removerSessionSeguro(`minuta_img_awb_${iata3}`, opM);
-                removerSessionSeguro(`minuta_pdf_gol_${iata3}`, opM);
-            }
         }
 
         async function expurgarTodosAnexosEArquivosDaOperacao(nomeOp) {
@@ -1389,8 +1371,9 @@
             const iata3 = extrairIataBase(destBruto);
             const cia = (minutaObj.cia || '').toUpperCase();
 
+            const ehFormal = ehMinutaFormal(minutaObj);
             const jaCarregouDoBancoNestaSessao = (minutaObj._anexosBancoCarregadosId === minutaObj.id);
-            const temTudoEmMemoria = (cia === 'LATAM' && d.img_form && d.img_awb && d.doc_excel_b64) || (cia === 'GOL' && d.pdf_gol);
+            const temTudoEmMemoria = (cia === 'LATAM' && d.img_form && d.img_awb && d.doc_excel_b64 && (!ehFormal || d.doc_formal_pdf_b64)) || (cia === 'GOL' && d.pdf_gol);
 
             // 1. Consulta PRIMEIRO o Supabase pelo ID único da minuta (se ainda não consultou para este ID ou se forçado)
             if (supabaseClient && minutaObj.id && (forcarConsultaBanco || !jaCarregouDoBancoNestaSessao || !temTudoEmMemoria)) {
@@ -1398,7 +1381,6 @@
                     const { data, error } = await supabaseClient.from('minutas').select('dados,operacao').eq('id', minutaObj.id).maybeSingle();
                     if (!error && data && data.dados) {
                         const dbDados = data.dados;
-                        // Garante que os dados do banco pertencem à mesma operação e ID desta minuta
                         if ((!dbDados.captura_operacao_id || dbDados.captura_operacao_id === opEscopo) &&
                             (!dbDados.captura_minuta_id || dbDados.captura_minuta_id === minutaObj.id)) {
                             minutaObj._anexosBancoCarregadosId = minutaObj.id;
@@ -1416,6 +1398,9 @@
                             }
                             if (dbDados.doc_excel_b64) merged.doc_excel_b64 = dbDados.doc_excel_b64;
                             if (dbDados.doc_excel_nome) merged.doc_excel_nome = dbDados.doc_excel_nome;
+                            if (dbDados.doc_formal_pdf_b64) merged.doc_formal_pdf_b64 = dbDados.doc_formal_pdf_b64;
+                            if (dbDados.doc_formal_pdf_nome) merged.doc_formal_pdf_nome = dbDados.doc_formal_pdf_nome;
+                            if (dbDados.formal_meta) merged.formal_meta = dbDados.formal_meta;
                             if (dbDados.awb && String(dbDados.awb).trim() !== '' && (!minutaObj.dados.awb || !String(minutaObj.dados.awb).trim())) {
                                 merged.awb = dbDados.awb;
                             }
@@ -1425,6 +1410,7 @@
                             if (merged.img_awb) salvarSessionSeguro(`minuta_img_awb_id_${minutaObj.id}`, merged.img_awb, opEscopo);
                             if (merged.pdf_gol) salvarSessionSeguro(`minuta_pdf_gol_id_${minutaObj.id}`, merged.pdf_gol, opEscopo);
                             if (merged.doc_excel_b64) salvarSessionSeguro(`minuta_excel_latam_${destBruto}`, merged.doc_excel_b64, opEscopo);
+                            if (merged.doc_formal_pdf_b64) salvarSessionSeguro(`minuta_pdf_formal_${destBruto}`, merged.doc_formal_pdf_b64, opEscopo);
                         }
                     }
                 } catch (e) {}
@@ -1435,6 +1421,9 @@
                 if (!minutaObj.dados.img_form) minutaObj.dados.img_form = obterImagemMinuta(minutaObj, 'FORM') || undefined;
                 if (!minutaObj.dados.img_awb) minutaObj.dados.img_awb = obterImagemMinuta(minutaObj, 'AWB') || undefined;
                 if (!minutaObj.dados.doc_excel_b64) minutaObj.dados.doc_excel_b64 = lerSessionSeguro(`minuta_excel_latam_${destBruto}`, opEscopo) || undefined;
+                if (ehFormal && !minutaObj.dados.doc_formal_pdf_b64) {
+                    minutaObj.dados.doc_formal_pdf_b64 = obterPdfFormalMinuta(minutaObj) || undefined;
+                }
             } else if (cia === 'GOL') {
                 if (!minutaObj.dados.pdf_gol) minutaObj.dados.pdf_gol = lerSessionSeguro(`minuta_pdf_gol_id_${minutaObj.id}`, opEscopo) || undefined;
             }
@@ -1475,7 +1464,7 @@
                 // OTIMIZAÇÃO CRÍTICA DE EGRESS:
                 // Usa projeção JSONB do PostgREST para NUNCA trafegar img_form, img_awb, pdf_gol ou doc_excel_b64 nas listagens periódicas!
                 // Reduz o tráfego de ~15 MB por consulta para ~3 KB (99,9% de economia de Egress)!
-                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,remessa:dados->remessa,operadores:dados->operadores,finalizado_em:dados->finalizado_em';
+                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,finalizado_em:dados->finalizado_em';
 
                 const promessas = [
                     supabaseClient.from('operacoes').select('*').order('criado_em', { ascending: false }),
@@ -1571,6 +1560,8 @@
                             concluido_por: rem.concluido_por || loc?.dados?.concluido_por || '',
                             horario_conclusao: rem.horario_conclusao || loc?.dados?.horario_conclusao || '',
                             doc_excel_nome: rem.doc_excel_nome || loc?.dados?.doc_excel_nome || undefined,
+                            doc_formal_pdf_nome: rem.doc_formal_pdf_nome || loc?.dados?.doc_formal_pdf_nome || undefined,
+                            formal_meta: rem.formal_meta || loc?.dados?.formal_meta || undefined,
                             remessa: rem.remessa || loc?.dados?.remessa || {}
                         });
 
@@ -1599,6 +1590,8 @@
                                 concluido_por: m.dados?.concluido_por,
                                 horario_conclusao: m.dados?.horario_conclusao,
                                 doc_excel_nome: m.dados?.doc_excel_nome,
+                                doc_formal_pdf_nome: m.dados?.doc_formal_pdf_nome,
+                                formal_meta: m.dados?.formal_meta,
                                 remessa: m.dados?.remessa
                             }
                         }));
@@ -1650,6 +1643,9 @@
                                 img_awb: refAtualizada.dados?.img_awb || minutaAberta.dados.img_awb,
                                 pdf_gol: refAtualizada.dados?.pdf_gol || minutaAberta.dados.pdf_gol,
                                 doc_excel_b64: refAtualizada.dados?.doc_excel_b64 || minutaAberta.dados.doc_excel_b64,
+                                doc_formal_pdf_b64: refAtualizada.dados?.doc_formal_pdf_b64 || minutaAberta.dados.doc_formal_pdf_b64,
+                                doc_formal_pdf_nome: refAtualizada.dados?.doc_formal_pdf_nome || minutaAberta.dados.doc_formal_pdf_nome,
+                                formal_meta: refAtualizada.dados?.formal_meta || minutaAberta.dados.formal_meta,
                                 awb: (refAtualizada.dados?.awb && String(refAtualizada.dados.awb).trim()) ? refAtualizada.dados.awb : (minutaAberta.dados.awb || '')
                             });
                         }
@@ -1815,10 +1811,12 @@
                     const awb  = normalizarTextoComparacao(m.dados && m.dados.awb ? m.dados.awb : '');
                     return dest.includes(termoPesq) || cia.includes(termoPesq) || awb.includes(termoPesq);
                 });
-                if (filtroStatus !== 'TODOS') filtradas = filtradas.filter(m => m.status === filtroStatus);
+                if (filtroStatus === 'PENDENTE') filtradas = filtradas.filter(m => m.status !== 'CONCLUÍDA');
+                else if (filtroStatus !== 'TODOS') filtradas = filtradas.filter(m => m.status === filtroStatus);
             } else {
                 filtradas = filtradas.filter(m => (m.operador || '').toUpperCase() === filtroUsuario.toUpperCase());
-                if (filtroStatus !== 'TODOS') filtradas = filtradas.filter(m => m.status === filtroStatus);
+                if (filtroStatus === 'PENDENTE') filtradas = filtradas.filter(m => m.status !== 'CONCLUÍDA');
+                else if (filtroStatus !== 'TODOS') filtradas = filtradas.filter(m => m.status === filtroStatus);
             }
 
             const listaGeral = document.getElementById('lista-minutas-gerais');
@@ -1983,14 +1981,12 @@
                     </div>
                     <div class="p-5 flex flex-wrap items-center justify-between gap-3">
                         <div class="flex flex-wrap items-center gap-3">
-                            <button id="btn-previa-form-${iata3}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnFormCls}" ${btnFormClick}>${btnFormTxt}</button>
-                            <button id="btn-previa-awb-${iata3}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnAwbCls}" ${btnAwbClick}>${btnAwbTxt}</button>
+                            <button id="btn-previa-form-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnFormCls}" ${btnFormClick}>${btnFormTxt}</button>
+                            <button id="btn-previa-awb-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnAwbCls}" ${btnAwbClick}>${btnAwbTxt}</button>
                         </div>
-                        ${obterIrmaosMesmoIataNaOp(minutaAberta).map(irmao => `
-                            <button type="button" onclick="transferirCapturasEntreIrmaos('${minutaAberta.id}', '${irmao.id}')" class="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5" title="Copia/transfere as 2 capturas desta minuta para ${irmao.destino} (ou puxa de ${irmao.destino} se esta estiver vazia)">
-                                <span>⇄ Sincronizar / Mover Captura com ${irmao.destino}</span>
-                            </button>
-                        `).join('')}
+                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 text-slate-500 dark:text-slate-300 font-mono text-[10px] font-bold" title="Identificador único de vínculo de captura deste bloco">
+                            ID: ${minutaAberta.dados?.BLOCO_ID || minutaAberta.destino}
+                        </span>
                     </div>
                     ${buildAiLatamCaptureStatusStripHtml(minutaAberta, imgForm, imgAwb)}
                 </div>
@@ -2403,16 +2399,38 @@
                     const ignAnt = Boolean(existente.dados?.ignorar_regra_origem);
                     const ignNov = Boolean(novo.dados?.ignorar_regra_origem);
 
+                    const valAnt = parseNumeroUniversal(rAnt.Valor);
+                    const valNov = parseNumeroUniversal(rNov.Valor);
                     const mudouPeso = Math.abs(pesoAnt - pesoNov) > 0.001;
                     const mudouVol  = volAnt !== volNov;
                     const mudouOrig = origAnt !== origNov || ignAnt !== ignNov;
                     const mudouLacre = lacreAnt !== lacreNov;
+                    const mudouValor = Math.abs(valAnt - valNov) > 0.01;
 
-                    if (mudouPeso || mudouVol || mudouOrig || mudouLacre) {
+                    // Se mudou APENAS o Valor (ex: atualização do Valor NF do Formal) e não mudou Peso/Vol/Origem/Lacre em LATAM,
+                    // atualiza o Valor, a planilha Excel (.xlsx) e o PDF Formal silenciosamente sem apagar as capturas!
+                    if (!mudouPeso && !mudouVol && !mudouOrig && !mudouLacre && mudouValor && (existente.cia || '').toUpperCase() === 'LATAM') {
+                        if (!existente.dados) existente.dados = {};
+                        if (!existente.dados.remessa) existente.dados.remessa = {};
+                        existente.dados.remessa.Valor = valNov;
+                        if (novo.dados && novo.dados.doc_excel_b64) {
+                            existente.dados.doc_excel_b64 = novo.dados.doc_excel_b64;
+                            existente.dados.doc_excel_nome = novo.dados.doc_excel_nome;
+                            salvarSessionSeguro(`minuta_excel_latam_${(existente.destino || '').trim().toUpperCase()}`, novo.dados.doc_excel_b64);
+                        }
+                        if (novo.dados && novo.dados.doc_formal_pdf_b64) {
+                            existente.dados.doc_formal_pdf_b64 = novo.dados.doc_formal_pdf_b64;
+                            existente.dados.doc_formal_pdf_nome = novo.dados.doc_formal_pdf_nome || 'FORMAL.pdf';
+                            if (novo.dados.formal_meta) existente.dados.formal_meta = novo.dados.formal_meta;
+                            salvarSessionSeguro(`minuta_pdf_formal_${(existente.destino || '').trim().toUpperCase()}`, novo.dados.doc_formal_pdf_b64);
+                        }
+                        if (supabaseClient) salvarDadosMinutaPreservandoAnexos(existente);
+                        qtdIguaisIgnorados++;
+                    } else if (mudouPeso || mudouVol || mudouOrig || mudouLacre || mudouValor) {
                         destinosAlterados.push({
                             existente,
                             novo,
-                            mudancas: { pesoAnt, pesoNov, volAnt, volNov, origAnt, origNov, lacreAnt, lacreNov }
+                            mudancas: { pesoAnt, pesoNov, volAnt, volNov, origAnt, origNov, lacreAnt, lacreNov, valAnt, valNov }
                         });
                     } else {
                         // Destino INALTERADO: preserva 100% de suas capturas, PDF, AWB e status!
@@ -2464,6 +2482,12 @@
                             ex.dados.doc_excel_b64 = nv.dados.doc_excel_b64;
                             ex.dados.doc_excel_nome = nv.dados.doc_excel_nome;
                             salvarSessionSeguro(`minuta_excel_latam_${(ex.destino || '').trim().toUpperCase()}`, nv.dados.doc_excel_b64);
+                        }
+                        if (nv.dados.doc_formal_pdf_b64) {
+                            ex.dados.doc_formal_pdf_b64 = nv.dados.doc_formal_pdf_b64;
+                            ex.dados.doc_formal_pdf_nome = nv.dados.doc_formal_pdf_nome || 'FORMAL.pdf';
+                            if (nv.dados.formal_meta) ex.dados.formal_meta = nv.dados.formal_meta;
+                            salvarSessionSeguro(`minuta_pdf_formal_${(ex.destino || '').trim().toUpperCase()}`, nv.dados.doc_formal_pdf_b64);
                         }
                         ex.dados.remessa = Object.assign({}, ex.dados.remessa || {}, nv.dados.remessa);
                         ex.status = 'PENDENTE';
@@ -2523,6 +2547,7 @@
                             if (m.volAnt !== m.volNov) diffs.push(`Volume: <s>${m.volAnt}</s> → <strong class="text-emerald-600 dark:text-emerald-400">${m.volNov}</strong>`);
                             if (m.origAnt !== m.origNov) diffs.push(`Origem: <s>${m.origAnt}</s> → <strong class="text-emerald-600 dark:text-emerald-400">${m.origNov}</strong>`);
                             if (m.lacreAnt !== m.lacreNov) diffs.push(`Lacre: <s>${m.lacreAnt || '-'}</s> → <strong class="text-emerald-600 dark:text-emerald-400">${m.lacreNov || '-'}</strong>`);
+                            if (m.valAnt !== undefined && Math.abs(m.valAnt - m.valNov) > 0.01) diffs.push(`Valor: <s>R$ ${Number(m.valAnt).toFixed(2)}</s> → <strong class="text-emerald-600 dark:text-emerald-400">R$ ${Number(m.valNov).toFixed(2)}</strong>`);
                             const stAtual = d.existente.status === 'CONCLUÍDA' ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold">Terá minuta refeita</span>` : '';
                             return `
                             <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
@@ -2624,9 +2649,11 @@
                 : `${(minutaAberta.destino || 'DOC').trim().toUpperCase()}.xlsx`;
             const dadosExcelEsp = extrairDadosPlanilhaExcelLatam(minutaAberta);
 
+            const blocoIdRaw = (minutaAberta.dados && minutaAberta.dados.BLOCO_ID) ? String(minutaAberta.dados.BLOCO_ID).trim() : '';
             window.dispatchEvent(new CustomEvent('EnviarExcelLatam', {
                 detail: {
                     minutaId: minutaAberta.id,
+                    blocoId: blocoIdRaw,
                     destino: (minutaAberta.destino || '').trim().toUpperCase(),
                     destinoIata: destIata,
                     recebedorIata: codigosPortal.recebedor,
@@ -2642,7 +2669,7 @@
                 }
             }));
 
-            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
+            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&minuta_id=${encodeURIComponent(minutaAberta.id)}&bloco_id=${encodeURIComponent(blocoIdRaw)}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
             setTimeout(() => {
                 window.open(urlLatam, '_blank');
             }, 80);
@@ -2773,7 +2800,7 @@
                 }
 
                 if (p === 1) {
-                    if (/LACRE\s*:/i.test(pageStr)) {
+                    if (/\b(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*\d{4,8}\b/i.test(pageStr)) {
                         jaTemLacre = true;
                     }
                     for (const item of textContent.items) {
@@ -2967,9 +2994,11 @@
         }
 
         async function finalizarAnexoPdfGolProcessado(arrayBuffer, dadosPdf, validacaoDestino, opcoesPeso = null) {
-            const { cte, refInfo, jaTemLacre } = dadosPdf;
+            const { cte, refInfo, jaTemLacre, textoCompleto } = dadosPdf;
             const lacreDaMinuta = String(minutaAberta.dados?.LACRE_ORIGINAL || minutaAberta.dados?.remessa?.Lacre || '').trim();
-            const pdfDataUriEditado = await carimbarLacreNoPdfGol(arrayBuffer, lacreDaMinuta, refInfo, jaTemLacre, opcoesPeso);
+            const lacreNumsMinuta = (lacreDaMinuta.match(/\d{4,8}/g) || []);
+            const pdfJaContemLacreExato = jaTemLacre || (lacreNumsMinuta.length > 0 && lacreNumsMinuta.every(num => String(textoCompleto || '').includes(num)));
+            const pdfDataUriEditado = await carimbarLacreNoPdfGol(arrayBuffer, lacreDaMinuta, refInfo, pdfJaContemLacreExato, opcoesPeso);
 
             const inputAwb = document.getElementById('input-awb-minuta');
             if (cte && inputAwb) {
@@ -3181,7 +3210,11 @@
                     return;
                 }
                 if (ehLatam && !obterImagemMinuta(minutaAberta, 'FORM')) {
-                    abrirModalSistema("Captura Obrigatória 📸", `A captura do Formulário preenchido de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
+                    abrirModalSistema("1ª Captura Obrigatória 📸", `A captura do Formulário preenchido de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
+                    return;
+                }
+                if (ehLatam && !obterImagemMinuta(minutaAberta, 'AWB')) {
+                    abrirModalSistema("2ª Captura Obrigatória 📸", `A 2ª captura (tela de confirmação do AWB) de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
                     return;
                 }
 
@@ -3487,12 +3520,12 @@
                 }
 
                 let semArquivo = [];
-                if (concluidas < total) {
-                    if (g.cia === 'LATAM') {
-                        semArquivo = g.lista.filter(m => !obterImagemMinuta(m, 'FORM') || !obterImagemMinuta(m, 'AWB'));
-                    } else {
-                        semArquivo = g.lista.filter(m => !obterPdfGolMinuta(m));
-                    }
+                if (g.id === 'FORMAL_GRU') {
+                    semArquivo = g.lista.filter(m => !obterImagemMinuta(m, 'FORM') || !obterImagemMinuta(m, 'AWB') || !obterPdfFormalMinuta(m));
+                } else if (g.cia === 'LATAM') {
+                    semArquivo = g.lista.filter(m => !obterImagemMinuta(m, 'FORM') || !obterImagemMinuta(m, 'AWB'));
+                } else {
+                    semArquivo = g.lista.filter(m => !obterPdfGolMinuta(m));
                 }
 
                 if (concluidas === total && semArquivo.length === 0) {
@@ -3519,9 +3552,13 @@
 
                 let subtitulo = `Pendente: ${concluidas}/${total} concluídas`;
                 if (concluidas === total && semArquivo.length > 0) {
-                    subtitulo = g.cia === 'LATAM'
-                        ? `⚠️ Falta captura (${semArquivo[0].destino})`
-                        : `⚠️ Falta PDF GOL (${semArquivo[0].destino})`;
+                    if (g.id === 'FORMAL_GRU' && !obterPdfFormalMinuta(semArquivo[0])) {
+                        subtitulo = `⚠️ Falta PDF Formal (${semArquivo[0].destino})`;
+                    } else {
+                        subtitulo = g.cia === 'LATAM'
+                            ? `⚠️ Falta captura (${semArquivo[0].destino})`
+                            : `⚠️ Falta PDF GOL (${semArquivo[0].destino})`;
+                    }
                 }
 
                 return `
@@ -4015,9 +4052,12 @@
             const list = document.getElementById('emails-config-list');
             if (!list) return;
             list.innerHTML = emailsConfigDb.map(e => {
-                const corCia = (e.cia || '').toUpperCase() === 'LATAM'
+                const ciaUp = (e.cia || '').toUpperCase();
+                const corCia = ciaUp === 'LATAM'
                     ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400'
-                    : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400';
+                    : (ciaUp === 'FORMAL'
+                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400'
+                        : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400');
                 return `
                 <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition">
                     <td class="py-3 px-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${corCia}">${e.cia || ''}</span></td>
@@ -4614,7 +4654,7 @@
                     "AWBs Enviadas ao Sistema Aéreo Web! 🚀",
                     `Todas as ${linhasAwbs.length} AWBs desta operação já foram sincronizadas online com o Sistema Aéreo Web. Deseja também baixar a planilha Excel (.xlsx) como contingência?`,
                     () => {
-                        const linhasMeta = [ {'CAMPO': 'VERSAO_LAYOUT', 'VALOR': 1}, {'CAMPO': 'ID_OPERACAO', 'VALOR': operacaoAtual}, {'CAMPO': 'DATA_VOO', 'VALOR': new Date().toISOString().split('T')[0]}, {'CAMPO': 'TOTAL_BLOCOS', 'VALOR': minutasOp.length} ];
+                        const { dataBarra } = obterDatasOperacaoFormatadas(); const dataIsoBr = dataBarra.split('/').reverse().join('-'); const linhasMeta = [ {'CAMPO': 'VERSAO_LAYOUT', 'VALOR': 1}, {'CAMPO': 'ID_OPERACAO', 'VALOR': operacaoAtual}, {'CAMPO': 'DATA_VOO', 'VALOR': dataIsoBr}, {'CAMPO': 'TOTAL_BLOCOS', 'VALOR': minutasOp.length} ];
                         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasAwbs), "AWBS"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasMeta), "_META");
                         const dataStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-'); XLSX.writeFile(wb, `AWBS_AEREAS_${dataStr}.xlsx`);
                         showToast('Planilha AWBS de contingência baixada!');
@@ -4845,12 +4885,29 @@
             setTimeout(() => { t.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none'); }, 2500);
         }
 
-        function encontrarMinutaLatamPorCaptura(iata3, bruto, awbOpcional = '') {
-            const b = (bruto || '').trim().toUpperCase();
+        function encontrarMinutaLatamPorCaptura(iata3, bruto, awbOpcional = '', detailOpcional = null) {
+            const det = detailOpcional || {};
+            const idExplicito = String(det.minutaId || det.minuta_id || det.id || '').trim();
+            const blocoIdExplicito = String(det.blocoId || det.bloco_id || det.BLOCO_ID || '').trim().toUpperCase();
+            const b = String(bruto || det.destino_bruto || det.bruto || '').trim().toUpperCase();
             const i3 = extrairIataBase(iata3 || b);
             const awbLimpo = (awbOpcional || '').trim().toUpperCase();
 
-            // 1. Se veio um AWB na captura e já existe uma minuta com esse exato AWB na operação, é 100% ela!
+            // 1. Vínculo determinístico por ID único da minuta ou BLOCO_ID enviado no evento
+            if (idExplicito) {
+                const porId = minutasDb.find(m => m.id === idExplicito);
+                if (porId) return porId;
+            }
+            if (blocoIdExplicito) {
+                const porBlocoId = minutasDb.find(m =>
+                    (!m.operacao || m.operacao === operacaoAtual) &&
+                    (m.cia || '').toUpperCase() === 'LATAM' &&
+                    String(m.dados?.BLOCO_ID || '').trim().toUpperCase() === blocoIdExplicito
+                );
+                if (porBlocoId) return porBlocoId;
+            }
+
+            // 2. Se veio um AWB na captura e já existe uma minuta com esse exato AWB na operação, é 100% ela!
             if (awbLimpo) {
                 const porAwb = minutasDb.find(m =>
                     (!m.operacao || m.operacao === operacaoAtual) &&
@@ -4860,18 +4917,17 @@
                 if (porAwb) return porAwb;
             }
 
-            // 2. Se `minutaAberta` está ativa e é compatível com o IATA da captura (ex: usuário abriu BSBA SACA e clicou em Preencher Minuta),
-            //    prioriza SEMPRE `minutaAberta`!
-            if (minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM') {
-                const chavesAberta = obterChavesCandidatasCaptura(minutaAberta);
-                if (!b && !i3) return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
-                if (chavesAberta.includes(b) || chavesAberta.includes(i3) || chavesAberta.includes((iata3 || '').trim().toUpperCase())) {
-                    return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
-                }
+            // 3. Se `bruto` veio com qualificador exato do bloco (ex: "BSBA SACA", "BSBA CAIXAS", "FORA FORMAL", "MAOA DG", "MAOA PALLET"), casa pelo nome exato do bloco!
+            if (b && b.length > 3) {
+                const exataBruto = minutasDb.find(m =>
+                    (!m.operacao || m.operacao === operacaoAtual) &&
+                    (m.cia || '').toUpperCase() === 'LATAM' &&
+                    normalizarTextoComparacao(m.destino) === normalizarTextoComparacao(b)
+                );
+                if (exataBruto) return exataBruto;
             }
 
-            // 3. Verifica o alvo registrado quando o operador clicou em "Preencher Minuta" (`ultimoAlvoCapturaLatam`),
-            //    garantindo que mesmo se ele tiver voltado ao Painel, a captura de BSBA SACA vá para BSBA SACA e NUNCA para BSBA CAIXAS!
+            // 4. Verifica o alvo registrado por ID único quando o operador abriu a minuta ou clicou em "Preencher Minuta" (`ultimoAlvoCapturaLatam`)
             const alvoAtivo = lerAlvoCapturaLatam();
             if (alvoAtivo && alvoAtivo.id && (!alvoAtivo.operacao || alvoAtivo.operacao === operacaoAtual)) {
                 const minAlvo = minutasDb.find(m => m.id === alvoAtivo.id);
@@ -4883,17 +4939,16 @@
                 }
             }
 
-            // 4. Se `bruto` veio com nome composto exato (ex: "BSBA SACA" ou "BSBA CAIXAS"), casa pelo nome exato primeiro!
-            if (b && b.length > 3) {
-                const exataBruto = minutasDb.find(m =>
-                    (!m.operacao || m.operacao === operacaoAtual) &&
-                    (m.cia || '').toUpperCase() === 'LATAM' &&
-                    normalizarTextoComparacao(m.destino) === normalizarTextoComparacao(b)
-                );
-                if (exataBruto) return exataBruto;
+            // 5. Se `minutaAberta` está ativa e é compatível com o IATA da captura, usa o ID exato de `minutaAberta`
+            if (minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM') {
+                const chavesAberta = obterChavesCandidatasCaptura(minutaAberta);
+                if (!b && !i3) return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
+                if (chavesAberta.includes(b) || chavesAberta.includes(i3) || chavesAberta.includes((iata3 || '').trim().toUpperCase())) {
+                    return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
+                }
             }
 
-            // 5. Se houver mais de uma minuta com esse IATA (ex: BSBA SACA e BSBA CAIXAS), prioriza a que está EM PREENCHIMENTO ou PENDENTE!
+            // 6. Desempate preciso por Volume + Peso caso existam múltiplos blocos do mesmo IATA (ex: BSB Caixa vs Saca, FOR vs FOR FORMAL, DG, PALLET)
             const candidatasIata = minutasDb.filter(m => {
                 if (m.operacao && m.operacao !== operacaoAtual) return false;
                 if ((m.cia || '').toUpperCase() !== 'LATAM') return false;
@@ -4901,6 +4956,17 @@
                 return (b && chavesM.includes(b)) || (i3 && chavesM.includes(i3));
             });
             if (candidatasIata.length > 1) {
+                const volCap = parseInt(det.volume ?? det.volumes ?? det.quantidade ?? 0, 10);
+                const pesoCap = parseNumeroUniversal(det.peso ?? det.pesoKg ?? det.peso_total ?? 0);
+                if (volCap > 0 || pesoCap > 0) {
+                    const porVolPeso = candidatasIata.find(m => {
+                        const esp = obterDadosEsperadosMinutaLatam(m);
+                        const volOk = volCap > 0 ? esp.volumeEsp === volCap : true;
+                        const pesoOk = pesoCap > 0 ? pesoCompativelPortalLatam(pesoCap, esp.pesoEsp) : true;
+                        return volOk && pesoOk;
+                    });
+                    if (porVolPeso) return porVolPeso;
+                }
                 const emPreenchimento = candidatasIata.find(m => m.status === 'EM PREENCHIMENTO');
                 if (emPreenchimento) return emPreenchimento;
                 const pendente = candidatasIata.find(m => m.status === 'PENDENTE');
@@ -5545,22 +5611,8 @@
 
             // Se a tela de detalhe de uma minuta LATAM estiver aberta (ou houver alvo ativo clicado em "Preencher Minuta"),
             // valida a captura de FORM contra essa minuta ativa para impedir que captura de outro voo passe despercebida!
-            let alvo = null;
-            const detailViewAberta = !document.getElementById('detail-view').classList.contains('hidden');
-            if (tipo === 'FORM' && detailViewAberta && minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM') {
-                alvo = minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
-            } else if (tipo === 'FORM') {
-                const alvoClicado = lerAlvoCapturaLatam();
-                if (alvoClicado && alvoClicado.id && (!alvoClicado.operacao || alvoClicado.operacao === operacaoAtual)) {
-                    alvo = minutasDb.find(m => m.id === alvoClicado.id) || null;
-                }
-            }
-            if (!alvo) {
-                alvo = encontrarMinutaLatamPorCaptura(iata3, bruto, awb);
-            }
-
-            const i3Base = extrairIataBase(alvo?.destino || bruto || iata3 || '');
-            const ehUnicoIataNaOp = contarMinutasLatamMesmoIataNaOp(i3Base, alvo?.operacao || operacaoAtual) === 1;
+            // Identificação determinística por ID único da minuta tanto para a 1ª Captura (FORM) quanto para a 2ª Captura (AWB)
+            let alvo = encontrarMinutaLatamPorCaptura(iata3, bruto, awb, detail);
 
             // Validação síncrona imediata da 1ª captura (FORM) antes de aceitar/salvar
             if (tipo === 'FORM' && alvo) {
@@ -5575,20 +5627,9 @@
             }
 
             if (alvo) {
-                const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
                 const opAlvo = alvo.operacao || operacaoAtual || '';
-                // Salva SEMPRE no ID único da minuta e no nome completo exato (ex: 'BSBA SACA')
+                // Salva ESTRITAMENTE pelo ID único da minuta (minuta_img_form_id_<ID> / minuta_img_awb_id_<ID>)
                 salvarSessionSeguro(`${prefixo}id_${alvo.id}`, imagem, opAlvo);
-                if (destExatoAlvo) salvarSessionSeguro(`${prefixo}${destExatoAlvo}`, imagem, opAlvo);
-                // Só salva na chave curta de 3 letras (ex: 'BSB') se NÃO houver destino irmão na operação!
-                if (ehUnicoIataNaOp && i3Base) {
-                    salvarSessionSeguro(`${prefixo}${i3Base}`, imagem, opAlvo);
-                } else if (i3Base) {
-                    // Remove eventual chave genérica de 3 letras compartilhada para nunca vazar entre SACA e CAIXAS
-                    removerSessionSeguro(`${prefixo}${i3Base}`, opAlvo);
-                }
-            } else if (ehUnicoIataNaOp && i3Base) {
-                salvarSessionSeguro(`${prefixo}${i3Base}`, imagem);
             }
 
             if (alvo) {
@@ -5712,86 +5753,11 @@
             document.getElementById('modal-previa-captura').classList.add('hidden');
             document.getElementById('modal-previa-img').src = '';
             document.getElementById('modal-previa-pdf').src = '';
-        }
-
-        window.transferirCapturasEntreIrmaos = async function(idA, idB) {
-            const minA = minutasDb.find(m => m.id === idA);
-            const minB = minutasDb.find(m => m.id === idB);
-            if (!minA || !minB) return;
-            const opEsc = (operacaoAtual || '').trim().toUpperCase();
-
-            const formA = obterImagemMinuta(minA, 'FORM');
-            const awbA = obterImagemMinuta(minA, 'AWB');
-            const formB = obterImagemMinuta(minB, 'FORM');
-            const awbB = obterImagemMinuta(minB, 'AWB');
-
-            // Se A tem capturas e B não tem (ou se o operador clicou a partir de A para enviar para B):
-            if (formA || awbA) {
-                if (!minB.dados) minB.dados = {};
-                if (formA) {
-                    minB.dados.img_form = formA;
-                    salvarSessionSeguro(`minuta_img_form_id_${minB.id}`, formA, opEsc);
-                    salvarSessionSeguro(`minuta_img_form_${minB.destino.trim().toUpperCase()}`, formA, opEsc);
-                }
-                if (awbA) {
-                    minB.dados.img_awb = awbA;
-                    salvarSessionSeguro(`minuta_img_awb_id_${minB.id}`, awbA, opEsc);
-                    salvarSessionSeguro(`minuta_img_awb_${minB.destino.trim().toUpperCase()}`, awbA, opEsc);
-                }
-                // Remove de A após mover para B
-                if (minA.dados) {
-                    delete minA.dados.img_form;
-                    delete minA.dados.img_awb;
-                }
-                removerSessionSeguro(`minuta_img_form_id_${minA.id}`, opEsc);
-                removerSessionSeguro(`minuta_img_form_${minA.destino.trim().toUpperCase()}`, opEsc);
-                removerSessionSeguro(`minuta_img_awb_id_${minA.id}`, opEsc);
-                removerSessionSeguro(`minuta_img_awb_${minA.destino.trim().toUpperCase()}`, opEsc);
-
-                if (supabaseClient) {
-                    await Promise.all([
-                        salvarDadosMinutaPreservandoAnexos(minB),
-                        salvarDadosMinutaPreservandoAnexos(minA)
-                    ]);
-                }
-                showToast(`✅ Capturas movidas de ${minA.destino} para ${minB.destino}!`);
-            } else if (formB || awbB) {
-                // Puxa de B para A
-                if (!minA.dados) minA.dados = {};
-                if (formB) {
-                    minA.dados.img_form = formB;
-                    salvarSessionSeguro(`minuta_img_form_id_${minA.id}`, formB, opEsc);
-                    salvarSessionSeguro(`minuta_img_form_${minA.destino.trim().toUpperCase()}`, formB, opEsc);
-                }
-                if (awbB) {
-                    minA.dados.img_awb = awbB;
-                    salvarSessionSeguro(`minuta_img_awb_id_${minA.id}`, awbB, opEsc);
-                    salvarSessionSeguro(`minuta_img_awb_${minA.destino.trim().toUpperCase()}`, awbB, opEsc);
-                }
-                if (minB.dados) {
-                    delete minB.dados.img_form;
-                    delete minB.dados.img_awb;
-                }
-                removerSessionSeguro(`minuta_img_form_id_${minB.id}`, opEsc);
-                removerSessionSeguro(`minuta_img_form_${minB.destino.trim().toUpperCase()}`, opEsc);
-                removerSessionSeguro(`minuta_img_awb_id_${minB.id}`, opEsc);
-                removerSessionSeguro(`minuta_img_awb_${minB.destino.trim().toUpperCase()}`, opEsc);
-
-                if (supabaseClient) {
-                    await Promise.all([
-                        salvarDadosMinutaPreservandoAnexos(minA),
-                        salvarDadosMinutaPreservandoAnexos(minB)
-                    ]);
-                }
-                showToast(`✅ Capturas puxadas de ${minB.destino} para ${minA.destino}!`);
-            } else {
-                showToast('Nenhuma captura encontrada em nenhum dos dois blocos para transferir.');
-                return;
+            if (urlBlobPreviaPdfAtivo) {
+                try { URL.revokeObjectURL(urlBlobPreviaPdfAtivo); } catch (e) {}
+                urlBlobPreviaPdfAtivo = null;
             }
-
-            if (minutaAberta) abrirMinuta(minutaAberta.id);
-            renderCardsRelatorios();
-        };
+        }
 
         window.abrirModalImagemDiretaAuditoria = function(destBruto, labelTipo, minutaId, tipo) {
             const m = minutasDb.find(x => x.id === minutaId);
