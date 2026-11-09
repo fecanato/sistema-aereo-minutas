@@ -37,35 +37,51 @@
     <input type="file" id="file-upload-formal-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfFormalNoMinutas(event)">
 
     <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-            <div class="flex items-center gap-6">
-                <div class="flex items-center gap-3 cursor-pointer" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-4 lg:gap-6 min-w-0 shrink-0">
+                <div class="flex items-center gap-3 cursor-pointer shrink-0" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
                     <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
                         <i data-lucide="plane-takeoff" class="w-5 h-5 text-white"></i>
                     </div>
                     <div>
-                        <h1 class="text-sm font-bold text-slate-900 dark:text-white leading-tight">Sistema Aéreo</h1>
-                        <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">Gestão de Minutas</p>
+                        <h1 class="text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">Sistema Aéreo</h1>
+                        <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold whitespace-nowrap">Gestão de Minutas</p>
                     </div>
                 </div>
                 
-                <span id="active-op-badge" class="hidden md:inline-flex px-2.5 py-1 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-500/20">
+                <span id="active-op-badge" class="hidden md:inline-flex px-2.5 py-1 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-500/20 whitespace-nowrap">
                     Sem Operação
                 </span>
 
                 <nav style="display: none;" class="items-center gap-1 bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl border border-slate-200 dark:border-slate-700/50" id="main-nav">
-                    <button onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5">
+                    <button onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                         <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400"></i>
                         <span>Painel da Operação</span>
                     </button>
-                    <button onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5">
+                    <button onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
                         <i data-lucide="settings" class="w-3.5 h-3.5"></i>
                         <span>Configurações & Malha</span>
                     </button>
                 </nav>
             </div>
 
-            <div class="flex items-center gap-3">
+            <!-- Centro do Cabeçalho: Logo FedEx Linehaul -->
+            <div class="flex flex-1 items-center justify-center select-none pointer-events-none px-1 sm:px-2 min-w-0">
+                <div class="inline-flex items-center gap-1.5 sm:gap-2.5 px-2.5 sm:px-3.5 py-1 rounded-xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700/70 shadow-sm whitespace-nowrap">
+                    <div class="flex items-baseline tracking-tighter leading-none font-black text-base sm:text-xl" style="font-family: 'Inter', 'Arial Black', sans-serif;">
+                        <span class="text-[#4D148C] dark:text-[#a855f7]">Fed</span><span class="text-[#FF6200]" style="margin-left:-0.5px;">Ex</span>
+                    </div>
+                    <span class="h-3.5 sm:h-4 w-[1.5px] bg-slate-300 dark:bg-slate-600 rounded-full"></span>
+                    <div class="flex items-center gap-1 sm:gap-1.5">
+                        <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#FF6200] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+                        </svg>
+                        <span class="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-[0.15em] sm:tracking-[0.22em] text-slate-700 dark:text-slate-200">Linehaul</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3 shrink-0">
                 <button onclick="sincronizarTudoComBanco(true)" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition" title="Sincronizar">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                 </button>
@@ -92,11 +108,11 @@
             <div>
                 <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">ACESSO AO SISTEMA</h2>
                 <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white">Quem está operando?</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Selecione seu nome para identificar as atualizações de status.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Selecione seu nome para a distribuição de minutas</p>
             </div>
-            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-2 shadow-sm">
-                <div id="users-list" class="flex flex-col gap-1"></div>
-                <button onclick="abrirModalNovoUsuario()" class="w-full mt-2 py-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold transition flex items-center justify-center gap-2">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+                <div id="users-list" class="flex flex-col divide-y divide-slate-200 dark:divide-slate-700"></div>
+                <button onclick="abrirModalNovoUsuario()" class="w-full mt-4 py-3.5 px-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-400 text-sm font-bold transition flex items-center justify-center gap-2">
                     <i data-lucide="plus" class="w-4 h-4"></i> Adicionar usuário
                 </button>
             </div>
@@ -108,7 +124,7 @@
                 <div>
                     <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SEU ESPAÇO DE TRABALHO</h2>
                     <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white">Olá, <span id="workspace-user-name"></span>.</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Uma equipe. Uma operação. Todas as minutas.</p>
+                    <p id="workspace-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Uma equipe. Uma operação. Todas as minutas.</p>
                 </div>
                 <button onclick="openNovaOperacaoModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-sm transition flex items-center gap-2">
                     <i data-lucide="plus" class="w-4 h-4"></i> Criar operação
@@ -118,8 +134,9 @@
                 <div class="flex items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-2">
                     <button onclick="setWorkspaceTab('ANDAMENTO')" id="ws-tab-andamento" class="text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2">Em andamento (<span id="count-op-andamento">0</span>)</button>
                     <button onclick="setWorkspaceTab('HISTORICO')" id="ws-tab-historico" class="text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2">Histórico 48h (<span id="count-op-historico">0</span>)</button>
+                    <button onclick="sincronizarTudoComBanco(true)" class="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 px-1.5 py-0.5 -mb-1 rounded-lg text-sm font-bold transition" title="Atualizar operações" aria-label="Atualizar operações">↻</button>
                 </div>
-                <div id="workspace-ops-list" class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center transition-all"></div>
+                <div id="workspace-ops-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center transition-all"></div>
             </div>
         </div>
 
@@ -405,6 +422,7 @@
                         <select id="email-cia" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm">
                             <option value="LATAM">LATAM</option>
                             <option value="GOL">GOL</option>
+                            <option value="FORMAL">FORMAL (Fortaleza Aéreo)</option>
                         </select>
                     </div>
                     <div>
@@ -1671,12 +1689,12 @@
                 const nomeSeguro = String(op).toUpperCase();
                 const iniciais = nomeSeguro.substring(0,2);
                 return `
-                <button onclick="fazerLogin('${nomeSeguro}')" class="w-full p-4 flex items-center justify-between rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition group">
-                    <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 flex items-center justify-center font-bold text-sm shadow-sm">${iniciais}</div>
-                        <span class="font-bold text-slate-900 dark:text-white text-sm">${nomeSeguro}</span>
+                <button onclick="fazerLogin('${nomeSeguro}')" class="w-full py-4 px-1 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition group text-left">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-11 h-11 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">${iniciais}</div>
+                        <span class="font-bold text-slate-900 dark:text-white text-[15px]">${nomeSeguro}</span>
                     </div>
-                    <i data-lucide="arrow-right" class="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
+                    <span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-0.5 transition-transform">→</span>
                 </button>`;
             }).join('');
             if(window.lucide && document.getElementById('login-view').classList.contains('hidden') === false) lucide.createIcons();
@@ -1698,15 +1716,51 @@
             }
         }
 
-        window.setWorkspaceTab = function(aba) { abaWorkspace = aba; const btnAndamento = document.getElementById('ws-tab-andamento'); const btnHistorico = document.getElementById('ws-tab-historico'); if(aba === 'ANDAMENTO') { btnAndamento.className = 'text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2'; btnHistorico.className = 'text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2'; } else { btnHistorico.className = 'text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2'; btnAndamento.className = 'text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2'; } renderWorkspace(); }
-        function renderWorkspace() {
-            const list = document.getElementById('workspace-ops-list'); document.getElementById('count-op-andamento').textContent = operacoesAtivasDb.length; document.getElementById('count-op-historico').textContent = historicoOperacoes.length;
-            if (abaWorkspace === 'ANDAMENTO') {
-                if(operacoesAtivasDb.length > 0) { list.className = 'grid gap-4 text-left'; list.innerHTML = operacoesAtivasDb.map(op => { const dataNome = op.nome.includes(' ') ? op.nome.split(' ')[1] : op.nome; return `<div onclick="entrarOperacao('${op.nome}')" class="bg-slate-900 border border-slate-700 dark:border-slate-600 rounded-2xl p-6 shadow-sm hover:border-indigo-500 cursor-pointer transition flex items-center justify-between group"><div><span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase tracking-wider mb-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Em andamento</span><h3 class="font-bold text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-400 mt-1">${dataNome} • Entrar para conferir e preencher</p></div><i data-lucide="arrow-right" class="w-5 h-5 text-indigo-400 group-hover:translate-x-1 transition-transform"></i></div>`}).join(''); } 
-                else { list.className = 'bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center'; list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação aberta. Crie a operação do dia para começar.</p>`; }
+        window.setWorkspaceTab = function(tab) {
+            abaWorkspace = tab;
+            const btnAndamento = document.getElementById('ws-tab-andamento');
+            const btnHistorico = document.getElementById('ws-tab-historico');
+            const subEl = document.getElementById('workspace-subtitle');
+            if (tab === 'ANDAMENTO') {
+                btnAndamento.className = 'text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2';
+                btnHistorico.className = 'text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2';
+                if (subEl) subEl.textContent = 'Uma equipe. Uma operação. Todas as minutas.';
             } else {
-                if(historicoOperacoes.length > 0) { list.className = 'grid gap-4 text-left'; list.innerHTML = historicoOperacoes.map(op => `<div class="bg-slate-900 border border-slate-700 dark:border-slate-600 rounded-2xl p-5 shadow-sm flex items-center justify-between"><div><h3 class="font-bold text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-400 mt-1">Finalizada • No histórico por 48h</p></div><button onclick="reabrirOperacao('${op.id}', '${op.nome}')" class="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button></div>`).join(''); } 
-                else { list.className = 'bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center'; list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação no histórico de 48h.</p>`; }
+                btnHistorico.className = 'text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2';
+                btnAndamento.className = 'text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2';
+                if (subEl) subEl.textContent = 'Operações finalizadas nas últimas 48 horas.';
+            }
+            renderWorkspace();
+        }
+        function renderWorkspace() {
+            const list = document.getElementById('workspace-ops-list');
+            document.getElementById('count-op-andamento').textContent = operacoesAtivasDb.length;
+            document.getElementById('count-op-historico').textContent = historicoOperacoes.length;
+            const subEl = document.getElementById('workspace-subtitle');
+            if (subEl) {
+                subEl.textContent = abaWorkspace === 'HISTORICO'
+                    ? 'Operações finalizadas nas últimas 48 horas.'
+                    : 'Uma equipe. Uma operação. Todas as minutas.';
+            }
+            if (abaWorkspace === 'ANDAMENTO') {
+                if(operacoesAtivasDb.length > 0) {
+                    list.className = 'grid gap-4 text-left';
+                    list.innerHTML = operacoesAtivasDb.map(op => {
+                        const dataNome = op.nome.includes(' ') ? op.nome.split(' ')[1] : op.nome;
+                        return `<div onclick="entrarOperacao('${op.nome}')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm hover:border-indigo-500 dark:hover:border-indigo-500 cursor-pointer transition flex items-center justify-between group"><div><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold mb-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Em andamento</span><h3 class="font-bold text-slate-900 dark:text-white text-xl tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${dataNome} · Entrar para conferir e preencher</p></div><span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-1 transition-transform">→</span></div>`;
+                    }).join('');
+                } else {
+                    list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center';
+                    list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação aberta. Crie a operação do dia para começar.</p>`;
+                }
+            } else {
+                if(historicoOperacoes.length > 0) {
+                    list.className = 'grid gap-4 text-left';
+                    list.innerHTML = historicoOperacoes.map(op => `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center justify-between flex-wrap gap-3"><div onclick="entrarOperacao('${op.nome}')" class="cursor-pointer"><h3 class="font-bold text-slate-900 dark:text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Finalizada • No histórico por 48h</p></div><div class="flex items-center gap-2"><button onclick="reabrirOperacao('${op.id}', '${op.nome}')" class="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button><button onclick="entrarOperacao('${op.nome}')" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition">Consultar →</button></div></div>`).join('');
+                } else {
+                    list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center';
+                    list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação no histórico de 48h.</p>`;
+                }
             }
             if(window.lucide && document.getElementById('workspace-view').classList.contains('hidden') === false) lucide.createIcons();
         }
