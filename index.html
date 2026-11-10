@@ -755,11 +755,17 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Criar Senha</label>
-                        <input type="password" id="auth-input-nova-senha" placeholder="Mín. 3 caracteres" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <div class="relative">
+                            <input type="password" id="auth-input-nova-senha" placeholder="Mín. 3 caracteres" class="w-full px-3.5 py-2.5 pr-9 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <button type="button" onclick="alternarVisibilidadeInputSenha('auth-input-nova-senha')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold">👁</button>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Confirmar Senha</label>
-                        <input type="password" id="auth-input-conf-senha" onkeydown="if(event.key==='Enter') salvarPrimeiroAcessoSenha()" placeholder="Repita a senha" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <div class="relative">
+                            <input type="password" id="auth-input-conf-senha" onkeydown="if(event.key==='Enter') salvarPrimeiroAcessoSenha()" placeholder="Repita a senha" class="w-full px-3.5 py-2.5 pr-9 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <button type="button" onclick="alternarVisibilidadeInputSenha('auth-input-conf-senha')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold">👁</button>
+                        </div>
                     </div>
                 </div>
                 <div id="auth-wrap-pri-email">
@@ -2036,8 +2042,8 @@
                 const infoAuth = usuariosAuthDb[nomeSeguro] || {};
                 const temSenha = Boolean(infoAuth.senha && String(infoAuth.senha).trim().length > 0);
                 const badgeStatus = temSenha
-                    ? `<span class="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-bold">Com senha</span>`
-                    : `<span class="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-bold">1º Acesso</span>`;
+                    ? ''
+                    : `<span class="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-bold">1º Acesso</span>`;
                 return `
                 <button onclick="selecionarUsuarioNaTelaLogin('${nomeSeguro}')" class="w-full py-4 px-1 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition group text-left">
                     <div class="flex items-center gap-3.5">
@@ -2050,7 +2056,6 @@
                     <span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-0.5 transition-transform">→</span>
                 </button>`;
             }).join('');
-            if(window.lucide && document.getElementById('login-view').classList.contains('hidden') === false) lucide.createIcons();
         }
 
         window.alternarVisibilidadeInputSenha = function(inputId) {
@@ -2060,20 +2065,10 @@
             inp.focus();
         };
 
-        window.selecionarUsuarioNaTelaLogin = async function(nome) {
+        window.selecionarUsuarioNaTelaLogin = function(nome) {
             const nomeUp = String(nome || '').trim().toUpperCase();
             if (!nomeUp) return;
             usuarioSelecionadoAuth = nomeUp;
-
-            if (supabaseClient) {
-                try {
-                    const { data } = await supabaseClient.from('minutas').select('dados').eq('id', '__SYS_CONFIG__').maybeSingle();
-                    if (data && data.dados) {
-                        aplicarConfigGlobalUsuariosRecebida(data.dados.operadores, data.dados.usuarios_auth);
-                        renderLogin();
-                    }
-                } catch (e) {}
-            }
 
             const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nomeUp] || '';
             const uAuth = usuariosAuthDb[nomeUp] || { nome: nomeUp, senha: '', email: emailPadrao };
@@ -2089,13 +2084,15 @@
 
             if (!temSenha) {
                 document.getElementById('auth-modal-eyebrow').textContent = 'PRIMEIRO ACESSO — CRIAR SENHA';
-                document.getElementById('auth-input-nova-senha').value = '';
-                document.getElementById('auth-input-conf-senha').value = '';
+                const np = document.getElementById('auth-input-nova-senha');
+                const cp = document.getElementById('auth-input-conf-senha');
+                if (np) { np.type = 'password'; np.value = ''; }
+                if (cp) { cp.type = 'password'; cp.value = ''; }
                 const inpEmail = document.getElementById('auth-input-pri-email');
                 if (inpEmail) inpEmail.value = uAuth.email || emailPadrao || '';
                 document.getElementById('auth-step-primeiro-acesso').classList.remove('hidden');
                 document.getElementById('modal-auth-global').classList.remove('hidden');
-                setTimeout(() => document.getElementById('auth-input-nova-senha')?.focus(), 60);
+                setTimeout(() => np?.focus(), 20);
             } else {
                 document.getElementById('auth-modal-eyebrow').textContent = 'SENHA DE ACESSO';
                 const inpS = document.getElementById('auth-input-senha-login');
@@ -2103,9 +2100,18 @@
                 inpS.value = '';
                 document.getElementById('auth-step-login').classList.remove('hidden');
                 document.getElementById('modal-auth-global').classList.remove('hidden');
-                setTimeout(() => inpS.focus(), 60);
+                setTimeout(() => inpS.focus(), 20);
             }
-            if (window.lucide) lucide.createIcons();
+
+            // Atualiza em background sem bloquear a abertura imediata do modal
+            if (supabaseClient) {
+                supabaseClient.from('minutas').select('dados').eq('id', '__SYS_CONFIG__').maybeSingle().then(({ data }) => {
+                    if (data && data.dados) {
+                        aplicarConfigGlobalUsuariosRecebida(data.dados.operadores, data.dados.usuarios_auth);
+                        renderLogin();
+                    }
+                }).catch(() => {});
+            }
         };
 
         window.fecharModalAuthGlobal = function() {
@@ -2123,7 +2129,7 @@
             el.classList.remove('hidden');
         }
 
-        window.salvarPrimeiroAcessoSenha = async function() {
+        window.salvarPrimeiroAcessoSenha = function() {
             if (!usuarioSelecionadoAuth) return;
             const s1 = (document.getElementById('auth-input-nova-senha')?.value || '').trim();
             const s2 = (document.getElementById('auth-input-conf-senha')?.value || '').trim();
@@ -2145,10 +2151,10 @@
                 email: emailInput || usuariosAuthDb[usuarioSelecionadoAuth]?.email || emailPadrao,
                 atualizado_em: Date.now()
             };
-            await persistirConfigGlobalUsuariosNoBanco();
             const nomeLogar = usuarioSelecionadoAuth;
             fecharModalAuthGlobal();
             concluirLoginAutenticado(nomeLogar);
+            persistirConfigGlobalUsuariosNoBanco();
             showToast(`Senha cadastrada! Bem-vindo, ${nomeLogar}!`);
         };
 
