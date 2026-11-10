@@ -1404,8 +1404,13 @@
                             minutaObj._anexosBancoCarregadosId = minutaObj.id;
 
                             const merged = Object.assign({}, dbDados, minutaObj.dados);
-                            if (dbDados.img_form && !minutaObj._capturaLocalRecenteForm) merged.img_form = dbDados.img_form;
-                            else if (minutaObj.dados.img_form) merged.img_form = minutaObj.dados.img_form;
+                            if (minutaObj._capturaFormRejeitadaLocalmente) {
+                                delete merged.img_form;
+                            } else if (dbDados.img_form && !minutaObj._capturaLocalRecenteForm) {
+                                merged.img_form = dbDados.img_form;
+                            } else if (minutaObj.dados.img_form) {
+                                merged.img_form = minutaObj.dados.img_form;
+                            }
 
                             if (dbDados.img_awb && !minutaObj._capturaLocalRecenteAwb) merged.img_awb = dbDados.img_awb;
                             else if (minutaObj.dados.img_awb) merged.img_awb = minutaObj.dados.img_awb;
@@ -5196,6 +5201,7 @@
 
             if (alvo.dados) delete alvo.dados.img_form;
             alvo._capturaLocalRecenteForm = false;
+            alvo._capturaFormRejeitadaLocalmente = true;
 
             if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
                 delete minutaAberta.dados.img_form;
@@ -5281,14 +5287,16 @@
             }
 
             const volField = detail.volume ?? detail.volumes ?? detail.quantidade ?? detail.qtd;
+            const pesoField = detail.peso ?? detail.pesoKg ?? detail.peso_total;
+            const pesoCapNum = (pesoField !== undefined && pesoField !== null && String(pesoField).trim() !== '') ? parseNumeroUniversal(pesoField) : null;
+            const pesoCapOk = (pesoCapNum !== null && !isNaN(pesoCapNum) && pesoCompativelPortalLatam(pesoCapNum, esp.pesoEsp));
             if (volField !== undefined && volField !== null && String(volField).trim() !== '') {
-                const volCap = parseInt(volField);
-                if (!isNaN(volCap) && volCap !== esp.volumeEsp) {
+                const volCap = parseInt(normalizarTokenNumericoOcr(volField), 10);
+                if (!isNaN(volCap) && volCap !== esp.volumeEsp && !isProvavelFalhaOcrDigitoUm(volCap, esp.volumeEsp) && !pesoCapOk) {
                     divergencias.push(`Volume divergente: preenchido "${volCap} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
                 }
             }
 
-            const pesoField = detail.peso ?? detail.pesoKg ?? detail.peso_total;
             if (pesoField !== undefined && pesoField !== null && String(pesoField).trim() !== '') {
                 const pesoCap = parseNumeroUniversal(pesoField);
                 if (!isNaN(pesoCap) && pesoCap > 0 && !pesoCompativelPortalLatam(pesoCap, esp.pesoEsp)) {
@@ -5577,15 +5585,22 @@
                 }
             }
 
-            // 5C. Proteção contra falso positivo óptico do dígito '1' (ex: "11" lido como "1" na fonte da LATAM quando Peso e Destino batem 100%)
+            // 5C. Validação inteligente de Volume e Peso sem falsos positivos de OCR:
+            // Se o Peso lido já bate com a minuta atual (ex: 61 kg == 61 kg) ou o Volume lido já bate com a minuta atual (11 vol == 11 vol),
+            // e o par (volumeLido, pesoLido) NÃO pertence a nenhum outro bloco da operação, qualquer diferença isolada no outro campo
+            // por falha óptica do Tesseract nos inputs HTML (como ler "1" no lugar de "11") é ignorada com segurança.
             const pesoBateComAlvo = (pesoLido !== null && !isNaN(pesoLido) && pesoCompativelPortalLatam(pesoLido, esp.pesoEsp));
+            const volumeBateComAlvo = (volumeLido !== null && !isNaN(volumeLido) && volumeLido === esp.volumeEsp);
+            const parPertenceAOutroBloco = outrosBlocos.some(
+                o => (volumeLido !== null && o.esp.volumeEsp === volumeLido) &&
+                     (pesoLido !== null && pesoCompativelPortalLatam(pesoLido, o.esp.pesoEsp))
+            );
+            const textoCargaTemVolumeEAlvo = new RegExp(`\b${esp.volumeEsp}\b`).test(trechoCarga) &&
+                                             new RegExp(`\b${Math.round(esp.pesoEsp)}\b`).test(trechoCarga);
+
             if (volumeLido !== null && !isNaN(volumeLido) && volumeLido !== esp.volumeEsp) {
                 const ehAmbiguidadeDigitoUm = isProvavelFalhaOcrDigitoUm(volumeLido, esp.volumeEsp);
-                const pertenceAOutroBloco = outrosBlocos.some(
-                    o => o.esp.volumeEsp === volumeLido && pesoLido !== null && pesoCompativelPortalLatam(pesoLido, o.esp.pesoEsp)
-                );
-                if (ehAmbiguidadeDigitoUm && pesoBateComAlvo && !pertenceAOutroBloco) {
-                    // O Peso e o Destino conferem exatamente com a minuta atual e a diferença no volume é apenas perda óptica de um traço '1' (ex: 11 -> 1)
+                if ((pesoBateComAlvo && !parPertenceAOutroBloco) || ehAmbiguidadeDigitoUm || textoCargaTemVolumeEAlvo) {
                     volumeLido = esp.volumeEsp;
                 } else {
                     divergencias.push(`Volume divergente na captura: preenchido "${volumeLido} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
@@ -5593,8 +5608,9 @@
             }
             if (pesoLido !== null && !isNaN(pesoLido) && !pesoCompativelPortalLatam(pesoLido, esp.pesoEsp)) {
                 const ehAmbiguidadePesoUm = isProvavelFalhaOcrDigitoUm(Math.round(pesoLido), Math.round(esp.pesoEsp));
-                const volumeBateComAlvo = (volumeLido !== null && volumeLido === esp.volumeEsp);
-                if (!ehAmbiguidadePesoUm || !volumeBateComAlvo) {
+                if ((volumeBateComAlvo && !parPertenceAOutroBloco) || ehAmbiguidadePesoUm || textoCargaTemVolumeEAlvo) {
+                    pesoLido = esp.pesoEsp;
+                } else {
                     divergencias.push(`Peso divergente na captura: preenchido "${pesoLido} kg", mas o sistema exige "${esp.pesoEsp} kg".`);
                 }
             }
@@ -5750,7 +5766,10 @@
                 alvo.dados[campo] = imagem;
                 alvo.dados.captura_operacao_id = opAlvo;
                 alvo.dados.captura_minuta_id = alvo.id;
-                if (tipo === 'FORM') alvo._capturaLocalRecenteForm = true;
+                if (tipo === 'FORM') {
+                    alvo._capturaLocalRecenteForm = true;
+                    alvo._capturaFormRejeitadaLocalmente = false;
+                }
                 else alvo._capturaLocalRecenteAwb = true;
                 salvarSessionSeguro(`${prefixo}id_${alvo.id}`, imagem, opAlvo);
                 if (awb && String(awb).trim()) {
