@@ -62,6 +62,10 @@
                         <i data-lucide="settings" class="w-3.5 h-3.5"></i>
                         <span>Configurações & Malha</span>
                     </button>
+                    <button onclick="switchMainTab('USUARIOS')" id="tab-btn-usuarios" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
+                        <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                        <span>Usuários</span>
+                    </button>
                 </nav>
             </div>
 
@@ -112,23 +116,25 @@
             </div>
             <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
                 <div id="users-list" class="flex flex-col divide-y divide-slate-200 dark:divide-slate-700"></div>
-                <button onclick="abrirModalNovoUsuario()" class="w-full mt-4 py-3.5 px-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-400 text-sm font-bold transition flex items-center justify-center gap-2">
-                    <i data-lucide="plus" class="w-4 h-4"></i> Adicionar usuário
-                </button>
             </div>
         </div>
 
         <!-- VIEW 0.5: WORKSPACE -->
         <div id="workspace-view" class="hidden max-w-4xl mx-auto mt-6 space-y-8">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SEU ESPAÇO DE TRABALHO</h2>
                     <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white">Olá, <span id="workspace-user-name"></span>.</h1>
                     <p id="workspace-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Uma equipe. Uma operação. Todas as minutas.</p>
                 </div>
-                <button onclick="openNovaOperacaoModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-sm transition flex items-center gap-2">
-                    <i data-lucide="plus" class="w-4 h-4"></i> Criar operação
-                </button>
+                <div class="flex items-center gap-2.5">
+                    <button onclick="switchMainTab('USUARIOS')" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm shadow-sm transition flex items-center gap-2">
+                        <i data-lucide="users" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i> Usuários
+                    </button>
+                    <button onclick="openNovaOperacaoModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-sm transition flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Criar operação
+                    </button>
+                </div>
             </div>
             <div class="space-y-4">
                 <div class="flex items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-2">
@@ -359,6 +365,45 @@
                             </tr>
                         </thead>
                         <tbody id="emails-config-list" class="divide-y divide-slate-50 dark:divide-slate-700/50 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 4: GESTÃO GLOBAL DE USUÁRIOS (ACESSO DOS 3 SISTEMAS) -->
+        <div id="usuarios-view" class="hidden max-w-5xl mx-auto space-y-6">
+            <div id="usuarios-back-workspace-wrap" class="hidden">
+                <button onclick="switchMainTab('WORKSPACE')" class="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar para Operações
+                </button>
+            </div>
+
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                <div class="p-6 border-b border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/50">
+                    <div>
+                        <h2 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                            <i data-lucide="users" class="w-5 h-5 text-indigo-600 dark:text-indigo-400"></i> Gestão Global de Usuários (3 Sistemas)
+                        </h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Usuários adicionados aqui ficam disponíveis automaticamente no <strong>Controle Operacional</strong>, <strong>Gestão de Minutas</strong> e <strong>Gestão de Pesos</strong>. A senha é criada pelo próprio operador em seu 1º acesso e recuperada pelo e-mail corporativo FedEx.
+                        </p>
+                    </div>
+                    <button onclick="abrirModalNovoUsuario()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm shrink-0">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i> + Adicionar Usuário (Sem Senha)
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto p-4">
+                    <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <thead>
+                            <tr class="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
+                                <th class="pb-3 px-3">Operador</th>
+                                <th class="pb-3 px-3">Status da Senha</th>
+                                <th class="pb-3 px-3">E-mail Corporativo FedEx</th>
+                                <th class="pb-3 px-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usuarios-admin-tbody" class="divide-y divide-slate-100 dark:divide-slate-700/50 text-sm"></tbody>
                     </table>
                 </div>
             </div>
@@ -637,17 +682,97 @@
         </div>
     </div>
 
-    <div id="modal-usuario" class="hidden fixed inset-0 bg-slate-900/40 dark:bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+    <!-- MODAL ADMIN: CRIAR / EDITAR USUÁRIO (ABA USUÁRIOS) -->
+    <div id="modal-usuario" class="hidden fixed inset-0 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm z-[180] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
             <div class="p-6 space-y-4">
-                <h3 class="text-lg font-bold text-slate-900 dark:text-white">Novo Usuário</h3>
+                <div class="flex items-center justify-between">
+                    <h3 id="modal-usuario-titulo" class="text-lg font-extrabold text-slate-900 dark:text-white">Novo Usuário (Sem Senha)</h3>
+                    <button onclick="fecharModalNovoUsuario()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <p id="modal-usuario-subtitulo" class="text-xs text-slate-500 dark:text-slate-400">O operador cadastrará sua própria senha global no primeiro acesso em qualquer um dos 3 sistemas.</p>
+                <input type="hidden" id="input-edit-usuario-modo" value="CRIAR">
                 <div>
-                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nome do operador</label>
-                    <input type="text" id="input-novo-usuario" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nome do Operador</label>
+                    <input type="text" id="input-novo-usuario" placeholder="Ex: MARCOS" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">E-mail Corporativo FedEx</label>
+                    <input type="email" id="input-novo-usuario-email" placeholder="Ex: nome.sobrenome@fedex.com" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <span class="text-[11px] text-slate-400 block mt-1">Ao clicar em "Esqueci a senha", a senha será enviada para este e-mail corporativo.</span>
                 </div>
                 <div class="pt-2 flex flex-col gap-2">
-                    <button onclick="confirmarNovoUsuario()" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition shadow-sm">Adicionar</button>
-                    <button onclick="fecharModalNovoUsuario()" class="w-full py-3 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-sm transition">Cancelar</button>
+                    <button onclick="confirmarNovoUsuario()" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition shadow-sm">Salvar Usuário</button>
+                    <button onclick="fecharModalNovoUsuario()" class="w-full py-2.5 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-sm transition">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE AUTENTICAÇÃO GLOBAL: 1º ACESSO E LOGIN COM SENHA + ESQUECI A SENHA (E-MAIL FEDEX) -->
+    <div id="modal-auth-global" class="hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm z-[190] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+            <!-- CABEÇALHO DO USUÁRIO SELECIONADO -->
+            <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/60">
+                <div class="flex items-center gap-3">
+                    <div id="auth-modal-avatar" class="w-11 h-11 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-extrabold text-sm">FE</div>
+                    <div>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block" id="auth-modal-eyebrow">ACESSO AO SISTEMA</span>
+                        <h3 id="auth-modal-username" class="text-lg font-extrabold text-slate-900 dark:text-white leading-tight">FELIPE</h3>
+                    </div>
+                </div>
+                <button onclick="fecharModalAuthGlobal()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition" title="Fechar">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- TELA A: LOGIN COM SENHA (ACESSOS NORMAIS) -->
+            <div id="auth-step-login" class="p-6 space-y-4">
+                <div id="auth-login-feedback" class="hidden p-3.5 rounded-xl text-xs font-bold leading-relaxed"></div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Digite sua senha de acesso</label>
+                    <div class="relative">
+                        <input type="password" id="auth-input-senha-login" onkeydown="if(event.key==='Enter') submeterLoginComSenha()" placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10">
+                        <button type="button" onclick="alternarVisibilidadeInputSenha('auth-input-senha-login')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold">👁</button>
+                    </div>
+                </div>
+                <div class="pt-1 flex flex-col gap-2.5">
+                    <button onclick="submeterLoginComSenha()" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition shadow-sm flex items-center justify-center gap-2">
+                        <span>Entrar no Sistema</span> <span>→</span>
+                    </button>
+                    <button type="button" onclick="dispararEsqueciSenhaEmailCorporativo()" class="w-full py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 font-bold text-xs transition">
+                        Esqueci a senha
+                    </button>
+                </div>
+            </div>
+
+            <!-- TELA B: PRIMEIRO ACESSO (CADASTRAR SENHA GLOBAL) -->
+            <div id="auth-step-primeiro-acesso" class="hidden p-6 space-y-4">
+                <div class="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 text-xs text-indigo-900 dark:text-indigo-200">
+                    <strong>👋 Bem-vindo ao seu 1º Acesso!</strong> Cadastre abaixo sua senha global. Ela funcionará automaticamente nos 3 sistemas (Controle Operacional, Gestão de Minutas e Gestão de Pesos).
+                </div>
+                <div id="auth-primeiro-feedback" class="hidden p-3 rounded-xl text-xs font-bold"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Criar Senha</label>
+                        <input type="password" id="auth-input-nova-senha" placeholder="Mín. 3 caracteres" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Confirmar Senha</label>
+                        <input type="password" id="auth-input-conf-senha" onkeydown="if(event.key==='Enter') salvarPrimeiroAcessoSenha()" placeholder="Repita a senha" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+                <div id="auth-wrap-pri-email">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">E-mail Corporativo FedEx</label>
+                    <input type="email" id="auth-input-pri-email" placeholder="nome@fedex.com" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="pt-1 flex flex-col gap-2">
+                    <button onclick="salvarPrimeiroAcessoSenha()" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-sm">
+                        Salvar Senha e Entrar →
+                    </button>
+                    <button type="button" onclick="fecharModalAuthGlobal()" class="w-full py-2 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-xs transition">
+                        Cancelar
+                    </button>
                 </div>
             </div>
         </div>
@@ -1398,10 +1523,21 @@
         }
 
         window.switchMainTab = function(tab) {
-            document.getElementById('login-view').classList.add('hidden'); document.getElementById('workspace-view').classList.add('hidden'); document.getElementById('dashboard-view').classList.add('hidden'); document.getElementById('detail-view').classList.add('hidden'); document.getElementById('config-view').classList.add('hidden');
-            const baseClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5';
-            const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5';
-            if(document.getElementById('tab-btn-painel')) { document.getElementById('tab-btn-painel').className = baseClass; document.getElementById('tab-btn-config').className = baseClass; }
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('workspace-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.add('hidden');
+            document.getElementById('detail-view').classList.add('hidden');
+            document.getElementById('config-view').classList.add('hidden');
+            const usrView = document.getElementById('usuarios-view');
+            if (usrView) usrView.classList.add('hidden');
+
+            const baseClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap';
+            const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap';
+            if(document.getElementById('tab-btn-painel')) {
+                document.getElementById('tab-btn-painel').className = baseClass;
+                document.getElementById('tab-btn-config').className = baseClass;
+                if (document.getElementById('tab-btn-usuarios')) document.getElementById('tab-btn-usuarios').className = baseClass;
+            }
             const badgeOp = document.getElementById('active-op-badge');
 
             if (tab === 'LOGIN') {
@@ -1412,6 +1548,26 @@
                 document.getElementById('dashboard-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'flex'; badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-painel')) document.getElementById('tab-btn-painel').className = activeClass; renderDashboard(); renderCardsRelatorios();
             } else if (tab === 'CONFIG') {
                 document.getElementById('config-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'flex'; badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-config')) document.getElementById('tab-btn-config').className = activeClass; renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig();
+            } else if (tab === 'USUARIOS') {
+                if (usrView) usrView.classList.remove('hidden');
+                document.getElementById('header-user-info').classList.remove('hidden');
+                document.getElementById('header-user-info').classList.add('flex');
+                const backWrap = document.getElementById('usuarios-back-workspace-wrap');
+                if (operacaoAtual) {
+                    document.getElementById('main-nav').style.display = 'flex';
+                    badgeOp.classList.remove('hidden');
+                    badgeOp.classList.add('md:inline-flex');
+                    document.getElementById('btn-finalizar-op').classList.remove('hidden');
+                    if (backWrap) backWrap.classList.add('hidden');
+                } else {
+                    document.getElementById('main-nav').style.display = 'none';
+                    badgeOp.classList.remove('md:inline-flex');
+                    badgeOp.classList.add('hidden');
+                    document.getElementById('btn-finalizar-op').classList.add('hidden');
+                    if (backWrap) backWrap.classList.remove('hidden');
+                }
+                if (document.getElementById('tab-btn-usuarios')) document.getElementById('tab-btn-usuarios').className = activeClass;
+                renderUsuariosAdmin();
             }
         }
 
@@ -1528,7 +1684,7 @@
                 // OTIMIZAÇÃO CRÍTICA DE EGRESS:
                 // Usa projeção JSONB do PostgREST para NUNCA trafegar img_form, img_awb, pdf_gol ou doc_excel_b64 nas listagens periódicas!
                 // Reduz o tráfego de ~15 MB por consulta para ~3 KB (99,9% de economia de Egress)!
-                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,finalizado_em:dados->finalizado_em';
+                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
 
                 const promessas = [
                     supabaseClient.from('operacoes').select('*').order('criado_em', { ascending: false }),
@@ -1578,9 +1734,10 @@
                 if(!resMinutas.error && resMinutas.data) {
                     const rows = resMinutas.data;
                     const configRow = rows.find(r => String(r.id) === '__SYS_CONFIG__');
-                    if(configRow && Array.isArray(configRow.operadores)) {
-                        configRow.operadores.forEach(op => { if(op && typeof op === 'string' && !operadores.includes(op)) operadores.push(op); });
+                    if (configRow) {
+                        aplicarConfigGlobalUsuariosRecebida(configRow.operadores, configRow.usuarios_auth);
                         renderLogin();
+                        if (!document.getElementById('usuarios-view')?.classList.contains('hidden')) renderUsuariosAdmin();
                     }
                     if (resOps.error) {
                         const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
@@ -1732,17 +1889,163 @@
             finally { syncEmAndamento = false; }
         }
 
+        // =========================================================================
+        // SISTEMA GLOBAL DE AUTENTICAÇÃO, SENHA E RECUPERAÇÃO POR E-MAIL FEDEX (3 SISTEMAS)
+        // =========================================================================
+        const PESOS_SUPABASE_URL = 'https://hhxcloojniyfrgfpfbgx.supabase.co';
+        const PESOS_SUPABASE_KEY = 'sb_publishable_AqUTHYWfBC68txeiByfKfg_CiTgwWrs';
+
+        const DEFAULT_FEDEX_EMAILS_BY_USER = {
+            'FELIPE': 'felipebarros@fedex.com',
+            'JAQUELINE': 'jaqueline.borges@fedex.com',
+            'KAIO': 'josesilva3@fedex.com'
+        };
+
+        let usuariosAuthDb = safeParse('sistema_aereo_usuarios_auth_v1', {
+            'FELIPE': { nome: 'FELIPE', senha: '', email: 'felipebarros@fedex.com' },
+            'JAQUELINE': { nome: 'JAQUELINE', senha: '', email: 'jaqueline.borges@fedex.com' },
+            'KAIO': { nome: 'KAIO', senha: '', email: 'josesilva3@fedex.com' }
+        });
+        let usuarioSelecionadoAuth = null;
+
+        function garantirEstruturaUsuariosAuth() {
+            if (!usuariosAuthDb || typeof usuariosAuthDb !== 'object') usuariosAuthDb = {};
+            const salvosOps = safeParse('sistema_aereo_operadores_lista_v1', null);
+            if (Array.isArray(salvosOps) && salvosOps.length > 0) {
+                operadores = Array.from(new Set(salvosOps.map(x => String(x || '').trim().toUpperCase()).filter(Boolean)));
+            }
+            operadores.forEach(op => {
+                const nome = String(op || '').trim().toUpperCase();
+                if (!nome) return;
+                const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '';
+                if (!usuariosAuthDb[nome]) {
+                    usuariosAuthDb[nome] = {
+                        nome,
+                        senha: '',
+                        email: emailPadrao
+                    };
+                } else if (!usuariosAuthDb[nome].email && emailPadrao) {
+                    usuariosAuthDb[nome].email = emailPadrao;
+                }
+            });
+        }
+        garantirEstruturaUsuariosAuth();
+
+        function salvarCacheLocalUsuariosAuth() {
+            try {
+                localStorage.setItem('sistema_aereo_usuarios_auth_v1', JSON.stringify(usuariosAuthDb));
+                localStorage.setItem('sistema_aereo_operadores_lista_v1', JSON.stringify(operadores));
+            } catch (e) {}
+        }
+
+        function aplicarConfigGlobalUsuariosRecebida(remOperadores, remUsuariosAuth) {
+            if (Array.isArray(remOperadores) && remOperadores.length > 0) {
+                const limpos = Array.from(new Set(remOperadores.map(x => String(x || '').trim().toUpperCase()).filter(Boolean)));
+                if (limpos.length > 0) operadores = limpos;
+            }
+            if (remUsuariosAuth && typeof remUsuariosAuth === 'object') {
+                for (const [k, v] of Object.entries(remUsuariosAuth)) {
+                    const nome = String(k || v?.nome || '').trim().toUpperCase();
+                    if (!nome) continue;
+                    const local = usuariosAuthDb[nome] || {};
+                    const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '';
+                    usuariosAuthDb[nome] = {
+                        nome,
+                        senha: (v && v.senha !== undefined) ? String(v.senha || '') : String(local.senha || ''),
+                        email: (v && v.email && String(v.email).trim() !== '') ? String(v.email).trim().toLowerCase() : String(local.email || emailPadrao),
+                        atualizado_em: v?.atualizado_em || local.atualizado_em || Date.now()
+                    };
+                    if (!operadores.includes(nome) && !v?.excluido) {
+                        operadores.push(nome);
+                    }
+                }
+            }
+            garantirEstruturaUsuariosAuth();
+            salvarCacheLocalUsuariosAuth();
+        }
+
+        async function persistirConfigGlobalUsuariosNoBanco() {
+            garantirEstruturaUsuariosAuth();
+            salvarCacheLocalUsuariosAuth();
+            if (supabaseClient) {
+                try {
+                    await supabaseClient.from('minutas').upsert([{
+                        id: '__SYS_CONFIG__',
+                        destino: 'SYS',
+                        cia: 'SYS',
+                        operador: usuarioLogado || 'SYS',
+                        status: 'ATIVA',
+                        operacao: 'SYS',
+                        dados: {
+                            operadores: operadores,
+                            usuarios_auth: usuariosAuthDb,
+                            atualizado_em: Date.now()
+                        }
+                    }]);
+                } catch (e) {}
+            }
+        }
+
+        async function sincronizarNovoUsuarioComGestaoPesos(nomeUsuario) {
+            const nome = String(nomeUsuario || '').trim().toUpperCase();
+            if (!nome) return;
+            try {
+                await fetch('https://hhxcloojniyfrgfpfbgx.supabase.co/rest/v1/usuarios', {
+                    method: 'POST',
+                    headers: {
+                        apikey: PESOS_SUPABASE_KEY,
+                        'Content-Type': 'application/json',
+                        Prefer: 'resolution=ignore-duplicates,return=minimal'
+                    },
+                    body: JSON.stringify({ nome, ativo: true })
+                });
+            } catch (e) {}
+        }
+
+        function enviarEmailRecuperacaoSenhaFedEx(nomeUsuario, emailCorporativo, senhaUsuario) {
+            const email = String(emailCorporativo || '').trim().toLowerCase();
+            if (!email) return false;
+            try {
+                fetch(`https://formsubmit.co/ajax/${encodeURIComponent(email)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        _subject: `🔐 Recuperação de Senha — Sistema Aéreo FedEx (${nomeUsuario})`,
+                        Operador: nomeUsuario,
+                        Email_Corporativo: email,
+                        Senha_Global_Sistema_Aereo: senhaUsuario,
+                        Mensagem: `Olá ${nomeUsuario}, sua senha global de acesso aos 3 sistemas (Controle Operacional, Gestão de Minutas e Gestão de Pesos) é: ${senhaUsuario}`,
+                        _template: 'box',
+                        _captcha: 'false'
+                    })
+                }).catch(() => {});
+            } catch (e) {}
+            return true;
+        }
+
         function renderLogin() {
+            garantirEstruturaUsuariosAuth();
             const list = document.getElementById('users-list');
             if(!list) return;
             list.innerHTML = operadores.filter(op => op && typeof op === 'string').map(op => {
                 const nomeSeguro = String(op).toUpperCase();
                 const iniciais = nomeSeguro.substring(0,2);
+                const infoAuth = usuariosAuthDb[nomeSeguro] || {};
+                const temSenha = Boolean(infoAuth.senha && String(infoAuth.senha).trim().length > 0);
+                const badgeStatus = temSenha
+                    ? `<span class="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-bold">Com senha</span>`
+                    : `<span class="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-bold">1º Acesso</span>`;
                 return `
-                <button onclick="fazerLogin('${nomeSeguro}')" class="w-full py-4 px-1 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition group text-left">
+                <button onclick="selecionarUsuarioNaTelaLogin('${nomeSeguro}')" class="w-full py-4 px-1 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition group text-left">
                     <div class="flex items-center gap-3.5">
                         <div class="w-11 h-11 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">${iniciais}</div>
-                        <span class="font-bold text-slate-900 dark:text-white text-[15px]">${nomeSeguro}</span>
+                        <div>
+                            <span class="font-bold text-slate-900 dark:text-white text-[15px] block">${nomeSeguro}</span>
+                            ${badgeStatus}
+                        </div>
                     </div>
                     <span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-0.5 transition-transform">→</span>
                 </button>`;
@@ -1750,21 +2053,333 @@
             if(window.lucide && document.getElementById('login-view').classList.contains('hidden') === false) lucide.createIcons();
         }
 
-        window.fazerLogin = function(nome) { usuarioLogado = nome; filtroUsuario = nome; localStorage.setItem('sistema_aereo_usuario', nome); document.getElementById('header-user-name').textContent = nome; document.getElementById('workspace-user-name').textContent = nome.toUpperCase(); switchMainTab('WORKSPACE'); sincronizarTudoComBanco(); }
-        window.logout = function() { usuarioLogado = null; localStorage.removeItem('sistema_aereo_usuario'); switchMainTab('LOGIN'); }
-        window.abrirModalNovoUsuario = function() { document.getElementById('input-novo-usuario').value = ''; document.getElementById('modal-usuario').classList.remove('hidden'); document.getElementById('input-novo-usuario').focus(); }
-        window.fecharModalNovoUsuario = function() { document.getElementById('modal-usuario').classList.add('hidden'); }
-        window.confirmarNovoUsuario = async function() {
-            const input = document.getElementById('input-novo-usuario'); const nome = input.value ? input.value.trim().toUpperCase() : '';
-            if(nome.length > 0) {
-                if(!operadores.includes(nome)) {
-                    operadores.push(nome); renderLogin();
-                    if(supabaseClient) { try { await supabaseClient.from('minutas').upsert([{ id: '__SYS_CONFIG__', destino: 'SYS', cia: 'SYS', operador: 'SYS', status: 'ATIVA', operacao: 'SYS', dados: { operadores: operadores } }]); } catch(e) {} }
-                    showToast(`Usuário ${nome} salvo!`);
-                }
-                fecharModalNovoUsuario();
+        window.alternarVisibilidadeInputSenha = function(inputId) {
+            const inp = document.getElementById(inputId);
+            if (!inp) return;
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+            inp.focus();
+        };
+
+        window.selecionarUsuarioNaTelaLogin = async function(nome) {
+            const nomeUp = String(nome || '').trim().toUpperCase();
+            if (!nomeUp) return;
+            usuarioSelecionadoAuth = nomeUp;
+
+            if (supabaseClient) {
+                try {
+                    const { data } = await supabaseClient.from('minutas').select('dados').eq('id', '__SYS_CONFIG__').maybeSingle();
+                    if (data && data.dados) {
+                        aplicarConfigGlobalUsuariosRecebida(data.dados.operadores, data.dados.usuarios_auth);
+                        renderLogin();
+                    }
+                } catch (e) {}
             }
+
+            const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nomeUp] || '';
+            const uAuth = usuariosAuthDb[nomeUp] || { nome: nomeUp, senha: '', email: emailPadrao };
+            if (!uAuth.email && emailPadrao) uAuth.email = emailPadrao;
+            const temSenha = Boolean(uAuth.senha && String(uAuth.senha).trim().length > 0);
+
+            document.getElementById('auth-modal-avatar').textContent = nomeUp.substring(0, 2);
+            document.getElementById('auth-modal-username').textContent = nomeUp;
+            document.getElementById('auth-step-login').classList.add('hidden');
+            document.getElementById('auth-step-primeiro-acesso').classList.add('hidden');
+            document.getElementById('auth-login-feedback').classList.add('hidden');
+            document.getElementById('auth-primeiro-feedback').classList.add('hidden');
+
+            if (!temSenha) {
+                document.getElementById('auth-modal-eyebrow').textContent = 'PRIMEIRO ACESSO — CRIAR SENHA';
+                document.getElementById('auth-input-nova-senha').value = '';
+                document.getElementById('auth-input-conf-senha').value = '';
+                const inpEmail = document.getElementById('auth-input-pri-email');
+                if (inpEmail) inpEmail.value = uAuth.email || emailPadrao || '';
+                document.getElementById('auth-step-primeiro-acesso').classList.remove('hidden');
+                document.getElementById('modal-auth-global').classList.remove('hidden');
+                setTimeout(() => document.getElementById('auth-input-nova-senha')?.focus(), 60);
+            } else {
+                document.getElementById('auth-modal-eyebrow').textContent = 'SENHA DE ACESSO';
+                const inpS = document.getElementById('auth-input-senha-login');
+                inpS.type = 'password';
+                inpS.value = '';
+                document.getElementById('auth-step-login').classList.remove('hidden');
+                document.getElementById('modal-auth-global').classList.remove('hidden');
+                setTimeout(() => inpS.focus(), 60);
+            }
+            if (window.lucide) lucide.createIcons();
+        };
+
+        window.fecharModalAuthGlobal = function() {
+            document.getElementById('modal-auth-global').classList.add('hidden');
+            usuarioSelecionadoAuth = null;
+        };
+
+        function exibirFeedbackModalAuth(elId, msg, tipo = 'erro') {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            el.textContent = msg;
+            el.className = tipo === 'sucesso'
+                ? 'p-3.5 rounded-xl text-xs font-bold leading-relaxed bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30'
+                : 'p-3.5 rounded-xl text-xs font-bold leading-relaxed bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30';
+            el.classList.remove('hidden');
         }
+
+        window.salvarPrimeiroAcessoSenha = async function() {
+            if (!usuarioSelecionadoAuth) return;
+            const s1 = (document.getElementById('auth-input-nova-senha')?.value || '').trim();
+            const s2 = (document.getElementById('auth-input-conf-senha')?.value || '').trim();
+            const emailInput = (document.getElementById('auth-input-pri-email')?.value || '').trim().toLowerCase();
+            const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[usuarioSelecionadoAuth] || '';
+
+            if (s1.length < 3) {
+                exibirFeedbackModalAuth('auth-primeiro-feedback', 'A senha precisa ter pelo menos 3 caracteres.');
+                return;
+            }
+            if (s1 !== s2) {
+                exibirFeedbackModalAuth('auth-primeiro-feedback', 'A confirmação da senha não confere.');
+                return;
+            }
+
+            usuariosAuthDb[usuarioSelecionadoAuth] = {
+                nome: usuarioSelecionadoAuth,
+                senha: s1,
+                email: emailInput || usuariosAuthDb[usuarioSelecionadoAuth]?.email || emailPadrao,
+                atualizado_em: Date.now()
+            };
+            await persistirConfigGlobalUsuariosNoBanco();
+            const nomeLogar = usuarioSelecionadoAuth;
+            fecharModalAuthGlobal();
+            concluirLoginAutenticado(nomeLogar);
+            showToast(`Senha cadastrada! Bem-vindo, ${nomeLogar}!`);
+        };
+
+        window.submeterLoginComSenha = function() {
+            if (!usuarioSelecionadoAuth) return;
+            const digitada = (document.getElementById('auth-input-senha-login')?.value || '').trim();
+            const uAuth = usuariosAuthDb[usuarioSelecionadoAuth];
+            if (!digitada) {
+                exibirFeedbackModalAuth('auth-login-feedback', 'Digite sua senha para entrar.');
+                return;
+            }
+            if (!uAuth || String(uAuth.senha).trim() !== digitada) {
+                exibirFeedbackModalAuth('auth-login-feedback', 'Senha incorreta. Tente novamente ou clique em Esqueci a senha.');
+                return;
+            }
+            const nomeLogar = usuarioSelecionadoAuth;
+            fecharModalAuthGlobal();
+            concluirLoginAutenticado(nomeLogar);
+        };
+
+        window.dispararEsqueciSenhaEmailCorporativo = function() {
+            if (!usuarioSelecionadoAuth) return;
+            const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[usuarioSelecionadoAuth] || '';
+            const uAuth = usuariosAuthDb[usuarioSelecionadoAuth] || { nome: usuarioSelecionadoAuth, email: emailPadrao };
+            const emailCorp = String(uAuth.email || emailPadrao || '').trim().toLowerCase();
+
+            if (!emailCorp) {
+                exibirFeedbackModalAuth('auth-login-feedback', 'Este usuário ainda não possui e-mail corporativo cadastrado na aba Usuários.');
+                return;
+            }
+
+            enviarEmailRecuperacaoSenhaFedEx(usuarioSelecionadoAuth, emailCorp, uAuth.senha || '');
+            exibirFeedbackModalAuth(
+                'auth-login-feedback',
+                `✅ Sua senha foi enviada para o seu e-mail corporativo da FedEx (${emailCorp}). Confira sua caixa de entrada e digite-a abaixo.`,
+                'sucesso'
+            );
+            setTimeout(() => document.getElementById('auth-input-senha-login')?.focus(), 60);
+        };
+
+        function concluirLoginAutenticado(nome) {
+            const nomeUp = String(nome || '').trim().toUpperCase();
+            usuarioLogado = nomeUp;
+            filtroUsuario = nomeUp;
+            try {
+                localStorage.setItem('sistema_aereo_usuario', nomeUp);
+                localStorage.setItem('sistema_aereo_sessao_autenticada_v1', JSON.stringify({
+                    nome: nomeUp,
+                    ts: Date.now()
+                }));
+            } catch (e) {}
+            document.getElementById('header-user-name').textContent = nomeUp;
+            document.getElementById('workspace-user-name').textContent = nomeUp;
+            switchMainTab('WORKSPACE');
+            sincronizarTudoComBanco();
+        }
+
+        window.fazerLogin = function(nome) {
+            selecionarUsuarioNaTelaLogin(nome);
+        };
+
+        window.logout = function() {
+            usuarioLogado = null;
+            try {
+                localStorage.removeItem('sistema_aereo_usuario');
+                localStorage.removeItem('sistema_aereo_sessao_autenticada_v1');
+            } catch (e) {}
+            switchMainTab('LOGIN');
+        };
+
+        // =========================================================================
+        // ABA USUÁRIOS (GESTÃO DE OPERADORES, E-MAIL FEDEX E RESET DE SENHA)
+        // =========================================================================
+        function renderUsuariosAdmin() {
+            garantirEstruturaUsuariosAuth();
+            const tbody = document.getElementById('usuarios-admin-tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = operadores.filter(op => op && typeof op === 'string').map(op => {
+                const nome = String(op).trim().toUpperCase();
+                const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '';
+                const u = usuariosAuthDb[nome] || { nome, senha: '', email: emailPadrao };
+                const emailExib = u.email || emailPadrao || 'Não cadastrado';
+                const temSenha = Boolean(u.senha && String(u.senha).trim().length > 0);
+                const iniciais = nome.substring(0, 2);
+
+                const statusSenhaHtml = temSenha
+                    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Senha ativa</span>`
+                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Aguardando 1º Acesso</span>`;
+
+                return `
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition">
+                    <td class="py-3.5 px-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">${iniciais}</div>
+                            <span class="font-extrabold text-slate-900 dark:text-white">${nome}</span>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-3">${statusSenhaHtml}</td>
+                    <td class="py-3.5 px-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">${emailExib}</td>
+                    <td class="py-3.5 px-3 text-right">
+                        <div class="inline-flex items-center justify-end gap-1.5">
+                            <button onclick="abrirModalEditarUsuario('${nome}')" class="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-bold transition">Editar E-mail</button>
+                            <button onclick="resetarSenhaUsuarioParaPrimeiroAcesso('${nome}')" class="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-bold transition" title="Zera a senha para o usuário cadastrar uma nova no próximo acesso">Resetar Senha</button>
+                            <button onclick="excluirUsuarioGlobal('${nome}')" class="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold transition" title="Remover usuário">Excluir</button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        window.abrirModalNovoUsuario = function() {
+            document.getElementById('modal-usuario-titulo').textContent = 'Adicionar Usuário (Sem Senha)';
+            document.getElementById('modal-usuario-subtitulo').textContent = 'O operador cadastrará sua própria senha global no primeiro acesso em qualquer um dos 3 sistemas.';
+            document.getElementById('input-edit-usuario-modo').value = 'CRIAR';
+            const inpNome = document.getElementById('input-novo-usuario');
+            inpNome.value = '';
+            inpNome.removeAttribute('disabled');
+            document.getElementById('input-novo-usuario-email').value = '';
+            document.getElementById('modal-usuario').classList.remove('hidden');
+            setTimeout(() => inpNome.focus(), 60);
+            if (window.lucide) lucide.createIcons();
+        };
+
+        window.abrirModalEditarUsuario = function(nome) {
+            const nomeUp = String(nome || '').trim().toUpperCase();
+            const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nomeUp] || '';
+            const u = usuariosAuthDb[nomeUp] || { nome: nomeUp, senha: '', email: emailPadrao };
+            document.getElementById('modal-usuario-titulo').textContent = `Editar Usuário — ${nomeUp}`;
+            document.getElementById('modal-usuario-subtitulo').textContent = 'Atualize o e-mail corporativo da FedEx vinculado a este operador.';
+            document.getElementById('input-edit-usuario-modo').value = 'EDITAR';
+            const inpNome = document.getElementById('input-novo-usuario');
+            inpNome.value = nomeUp;
+            inpNome.setAttribute('disabled', 'disabled');
+            document.getElementById('input-novo-usuario-email').value = u.email || emailPadrao || '';
+            document.getElementById('modal-usuario').classList.remove('hidden');
+            setTimeout(() => document.getElementById('input-novo-usuario-email')?.focus(), 60);
+            if (window.lucide) lucide.createIcons();
+        };
+
+        window.fecharModalNovoUsuario = function() {
+            document.getElementById('modal-usuario').classList.add('hidden');
+        };
+
+        window.confirmarNovoUsuario = async function() {
+            const modo = document.getElementById('input-edit-usuario-modo')?.value || 'CRIAR';
+            const input = document.getElementById('input-novo-usuario');
+            const nome = input.value ? input.value.trim().toUpperCase() : '';
+            const email = (document.getElementById('input-novo-usuario-email')?.value || '').trim().toLowerCase();
+
+            if (!nome) {
+                showToast('Informe o nome do operador.');
+                return;
+            }
+
+            if (modo === 'CRIAR') {
+                if (!operadores.includes(nome)) {
+                    operadores.push(nome);
+                }
+                usuariosAuthDb[nome] = {
+                    nome,
+                    senha: '',
+                    email: email || DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '',
+                    atualizado_em: Date.now()
+                };
+                await Promise.all([
+                    persistirConfigGlobalUsuariosNoBanco(),
+                    sincronizarNovoUsuarioComGestaoPesos(nome)
+                ]);
+                showToast(`Usuário ${nome} criado sem senha (1º acesso habilitado nos 3 sistemas)!`);
+            } else {
+                const atual = usuariosAuthDb[nome] || { nome, senha: '' };
+                usuariosAuthDb[nome] = {
+                    ...atual,
+                    nome,
+                    email: email || DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '',
+                    atualizado_em: Date.now()
+                };
+                await persistirConfigGlobalUsuariosNoBanco();
+                showToast(`E-mail de ${nome} atualizado!`);
+            }
+
+            fecharModalNovoUsuario();
+            renderLogin();
+            renderUsuariosAdmin();
+        };
+
+        window.resetarSenhaUsuarioParaPrimeiroAcesso = function(nome) {
+            const nomeUp = String(nome || '').trim().toUpperCase();
+            abrirModalSistema(
+                "Resetar Senha para 1º Acesso",
+                `Deseja zerar a senha de "${nomeUp}"? No próximo login dele em qualquer um dos 3 sistemas, abrirá a tela de Primeiro Acesso para ele criar uma nova senha.`,
+                async () => {
+                    const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nomeUp] || '';
+                    if (!usuariosAuthDb[nomeUp]) {
+                        usuariosAuthDb[nomeUp] = { nome: nomeUp, senha: '', email: emailPadrao };
+                    } else {
+                        usuariosAuthDb[nomeUp].senha = '';
+                        usuariosAuthDb[nomeUp].atualizado_em = Date.now();
+                    }
+                    await persistirConfigGlobalUsuariosNoBanco();
+                    renderLogin();
+                    renderUsuariosAdmin();
+                    showToast(`Senha de ${nomeUp} resetada! Ele poderá criar uma nova no 1º acesso.`);
+                }
+            );
+        };
+
+        window.excluirUsuarioGlobal = function(nome) {
+            const nomeUp = String(nome || '').trim().toUpperCase();
+            if (operadores.length <= 1) {
+                abrirModalSistema("Ação Bloqueada", "É necessário manter pelo menos 1 usuário cadastrado no sistema.");
+                return;
+            }
+            abrirModalSistema(
+                "Excluir Usuário",
+                `Deseja remover o operador "${nomeUp}" da lista de acesso?`,
+                async () => {
+                    operadores = operadores.filter(o => String(o).toUpperCase() !== nomeUp);
+                    if (usuariosAuthDb[nomeUp]) {
+                        usuariosAuthDb[nomeUp].excluido = true;
+                        delete usuariosAuthDb[nomeUp];
+                    }
+                    await persistirConfigGlobalUsuariosNoBanco();
+                    renderLogin();
+                    renderUsuariosAdmin();
+                    showToast(`Usuário ${nomeUp} removido.`);
+                }
+            );
+        };
 
         window.setWorkspaceTab = function(tab) {
             abaWorkspace = tab;
@@ -7450,9 +8065,14 @@
             
             try { renderLogin(); } catch(e) {}
 
-            if (usuarioSalvo && operadores.includes(usuarioSalvo)) {
+            const sessaoAuth = safeParse('sistema_aereo_sessao_autenticada_v1', null);
+            const temSenhaCadastrada = Boolean(usuarioSalvo && usuariosAuthDb[usuarioSalvo] && String(usuariosAuthDb[usuarioSalvo].senha || '').trim().length > 0);
+            if (usuarioSalvo && operadores.includes(usuarioSalvo) && temSenhaCadastrada && sessaoAuth && sessaoAuth.nome === usuarioSalvo) {
                 usuarioLogado = usuarioSalvo; filtroUsuario = usuarioSalvo; document.getElementById('header-user-name').textContent = usuarioSalvo; document.getElementById('workspace-user-name').textContent = usuarioSalvo.toUpperCase(); if(operacaoAtual) document.getElementById('active-op-badge').textContent = operacaoAtual; switchMainTab('WORKSPACE');
-            } else { switchMainTab('LOGIN'); }
+            } else {
+                usuarioLogado = null;
+                switchMainTab('LOGIN');
+            }
 
             // ITEM 3: Hidrata anexos persistentes do IndexedDB (48h) e sincroniza o DOM
             inicializarIntegracaoSistemaAereo();
