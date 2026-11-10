@@ -92,18 +92,18 @@
         </div>
 
         <!-- Linha Inferior Exclusiva para as Abas de Navegação (Centralizada, seguindo o padrão do Controle Operacional) -->
-        <div id="main-nav" style="display: none;" class="w-full border-t border-slate-200/80 dark:border-slate-700/70 bg-slate-50/80 dark:bg-slate-900/60">
+        <div id="main-nav" style="display: none;" class="hidden w-full border-t border-slate-200/80 dark:border-slate-700/70 bg-slate-50/80 dark:bg-slate-900/60">
             <div class="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-center w-full">
-                <nav class="flex items-center justify-center gap-1.5 overflow-x-auto" aria-label="Navegação Principal">
-                    <button onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                <nav class="inline-flex items-center justify-center gap-1.5 overflow-x-auto" aria-label="Navegação Principal">
+                    <button type="button" onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
                         <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400"></i>
                         <span>Painel da Operação</span>
                     </button>
-                    <button onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
+                    <button type="button" onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
                         <i data-lucide="settings" class="w-3.5 h-3.5"></i>
                         <span>Configurações & Malha</span>
                     </button>
-                    <button onclick="switchMainTab('USUARIOS')" id="tab-btn-usuarios" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
+                    <button type="button" onclick="switchMainTab('USUARIOS')" id="tab-btn-usuarios" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
                         <i data-lucide="users" class="w-3.5 h-3.5"></i>
                         <span>Usuários</span>
                     </button>
@@ -1551,28 +1551,39 @@
                 if (document.getElementById('tab-btn-usuarios')) document.getElementById('tab-btn-usuarios').className = baseClass;
             }
             const badgeOp = document.getElementById('active-op-badge');
+            const navBarEl = document.getElementById('main-nav');
+            const showNavBar = (show) => {
+                if (!navBarEl) return;
+                if (show) {
+                    navBarEl.classList.remove('hidden');
+                    navBarEl.style.display = 'block';
+                } else {
+                    navBarEl.classList.add('hidden');
+                    navBarEl.style.display = 'none';
+                }
+            };
 
             if (tab === 'LOGIN') {
-                document.getElementById('login-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'none'; badgeOp.classList.remove('md:inline-flex'); badgeOp.classList.add('hidden'); document.getElementById('header-user-info').classList.add('hidden'); document.getElementById('btn-finalizar-op').classList.add('hidden'); renderLogin();
+                document.getElementById('login-view').classList.remove('hidden'); showNavBar(false); badgeOp.classList.remove('md:inline-flex'); badgeOp.classList.add('hidden'); document.getElementById('header-user-info').classList.add('hidden'); document.getElementById('btn-finalizar-op').classList.add('hidden'); renderLogin();
             } else if (tab === 'WORKSPACE') {
-                document.getElementById('workspace-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'none'; badgeOp.classList.remove('md:inline-flex'); badgeOp.classList.add('hidden'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); document.getElementById('btn-finalizar-op').classList.add('hidden'); renderWorkspace();
+                document.getElementById('workspace-view').classList.remove('hidden'); showNavBar(false); badgeOp.classList.remove('md:inline-flex'); badgeOp.classList.add('hidden'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); document.getElementById('btn-finalizar-op').classList.add('hidden'); renderWorkspace();
             } else if (tab === 'PAINEL') {
-                document.getElementById('dashboard-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'flex'; badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-painel')) document.getElementById('tab-btn-painel').className = activeClass; renderDashboard(); renderCardsRelatorios();
+                document.getElementById('dashboard-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-painel')) document.getElementById('tab-btn-painel').className = activeClass; renderDashboard(); renderCardsRelatorios();
             } else if (tab === 'CONFIG') {
-                document.getElementById('config-view').classList.remove('hidden'); document.getElementById('main-nav').style.display = 'flex'; badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-config')) document.getElementById('tab-btn-config').className = activeClass; renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig();
+                document.getElementById('config-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-config')) document.getElementById('tab-btn-config').className = activeClass; renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig();
             } else if (tab === 'USUARIOS') {
                 if (usrView) usrView.classList.remove('hidden');
                 document.getElementById('header-user-info').classList.remove('hidden');
                 document.getElementById('header-user-info').classList.add('flex');
                 const backWrap = document.getElementById('usuarios-back-workspace-wrap');
                 if (operacaoAtual) {
-                    document.getElementById('main-nav').style.display = 'flex';
+                    showNavBar(true);
                     badgeOp.classList.remove('hidden');
                     badgeOp.classList.add('md:inline-flex');
                     document.getElementById('btn-finalizar-op').classList.remove('hidden');
                     if (backWrap) backWrap.classList.add('hidden');
                 } else {
-                    document.getElementById('main-nav').style.display = 'none';
+                    showNavBar(false);
                     badgeOp.classList.remove('md:inline-flex');
                     badgeOp.classList.add('hidden');
                     document.getElementById('btn-finalizar-op').classList.add('hidden');
