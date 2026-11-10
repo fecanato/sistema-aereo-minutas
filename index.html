@@ -1088,9 +1088,39 @@
             return limpo.split(/[\s/]+/)[0].substring(0, 3);
         }
 
+        function normalizarNomeDestinoDg(str) {
+            const s = String(str || '').trim().toUpperCase();
+            if (/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG(?:\s+CGH|\s+GRU)?$/i.test(s)) {
+                return s.replace(/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i, 'BSBA DG');
+            }
+            if (s === 'BRASILIA_CAIXAS|DG' || s === 'BRASILIA_SACA|DG') return 'BSBA DG';
+            return s;
+        }
+
+        function normalizarObjetoMinutaDg(minutaObj) {
+            if (!minutaObj || typeof minutaObj !== 'object') return false;
+            let alterou = false;
+            const destAtual = String(minutaObj.destino || '').trim();
+            if (/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG$/i.test(destAtual)) {
+                minutaObj.destino = 'BSBA DG';
+                alterou = true;
+            }
+            if (!minutaObj.dados) minutaObj.dados = {};
+            const blocoIdAtual = String(minutaObj.dados.BLOCO_ID || '').trim().toUpperCase();
+            if (blocoIdAtual === 'BRASILIA_CAIXAS|DG' || blocoIdAtual === 'BRASILIA_SACA|DG' || (minutaObj.destino === 'BSBA DG' && blocoIdAtual !== 'BSBA|DG')) {
+                minutaObj.dados.BLOCO_ID = 'BSBA|DG';
+                alterou = true;
+            }
+            if (minutaObj.dados.doc_excel_nome && /^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i.test(minutaObj.dados.doc_excel_nome)) {
+                minutaObj.dados.doc_excel_nome = String(minutaObj.dados.doc_excel_nome).replace(/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i, 'BSBA DG');
+                alterou = true;
+            }
+            return alterou;
+        }
+
         function casarDestinoComArquivoZip(destinoMinuta, nomeArquivoSemExt) {
-            const d = (destinoMinuta || '').trim().toUpperCase();
-            const f = (nomeArquivoSemExt || '').trim().toUpperCase();
+            const d = normalizarNomeDestinoDg(destinoMinuta);
+            const f = normalizarNomeDestinoDg(nomeArquivoSemExt);
             if (!d || !f) return false;
             if (d === f) return true;
 
@@ -1332,10 +1362,21 @@
 
         function obterExcelLatamMinuta(minuta) {
             if (!minuta || (minuta.cia || '').toUpperCase() !== 'LATAM') return null;
+            normalizarObjetoMinutaDg(minuta);
             if (minuta.dados && minuta.dados.doc_excel_b64) return minuta.dados.doc_excel_b64;
             const opEscopo = minuta.operacao || operacaoAtual || '';
             const destBruto = (minuta.destino || '').trim().toUpperCase();
-            return lerSessionSeguro(`minuta_excel_latam_${destBruto}`, opEscopo) || null;
+            let b64 = lerSessionSeguro(`minuta_excel_latam_${destBruto}`, opEscopo);
+            if (!b64 && destBruto === 'BSBA DG') {
+                b64 = lerSessionSeguro('minuta_excel_latam_BSBA CAIXAS DG', opEscopo)
+                   || lerSessionSeguro('minuta_excel_latam_BSBA SACA DG', opEscopo);
+                if (b64) {
+                    salvarSessionSeguro('minuta_excel_latam_BSBA DG', b64, opEscopo);
+                    removerSessionSeguro('minuta_excel_latam_BSBA CAIXAS DG', opEscopo);
+                    removerSessionSeguro('minuta_excel_latam_BSBA SACA DG', opEscopo);
+                }
+            }
+            return b64 || null;
         }
 
         function abrirModalSistema(titulo, msg, callbackSim = null) {
@@ -1588,7 +1629,7 @@
                             remessa: rem.remessa || loc?.dados?.remessa || {}
                         });
 
-                        return {
+                        const objMinuta = {
                             id: rem.id,
                             destino: rem.destino,
                             cia: rem.cia,
@@ -1597,6 +1638,10 @@
                             operacao: rem.operacao,
                             dados: dadosMontados
                         };
+                        if (normalizarObjetoMinutaDg(objMinuta) && supabaseClient) {
+                            salvarDadosMinutaPreservandoAnexos(objMinuta, { destino: objMinuta.destino });
+                        }
+                        return objMinuta;
                     });
 
                     // Salva no localStorage sem estourar cota com imagens pesadas
@@ -1968,6 +2013,9 @@
         window.abrirMinuta = async function(id) {
             limparChavesSemEscopoNoSessionStorage();
             minutaAberta = minutasDb.find(m => m.id === id); if(!minutaAberta) return;
+            if (normalizarObjetoMinutaDg(minutaAberta) && supabaseClient) {
+                salvarDadosMinutaPreservandoAnexos(minutaAberta, { destino: minutaAberta.destino });
+            }
             registrarAlvoCapturaLatam(minutaAberta);
             await garantirAnexosMinutaNoCache(minutaAberta, true);
             if ((minutaAberta.cia || '').toUpperCase() === 'GOL') {
@@ -2288,15 +2336,17 @@
                             const id = `MIN_${operacaoAtual.replace(/[^a-zA-Z0-9]/g, '')}_${row.BLOCO_ID}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
                             const lacreOrig = (row.LACRE_ORIGINAL !== undefined && row.LACRE_ORIGINAL !== null) ? String(row.LACRE_ORIGINAL).trim() : '';
                             const origemImportada = (row.ORIGEM || 'GRU').toString().trim().toUpperCase();
+                            const destNormImp = normalizarNomeDestinoDg((row.DESTINO || '').toString().trim());
+                            const blocoIdNormImp = (destNormImp === 'BSBA DG' || row.BLOCO_ID === 'BRASILIA_CAIXAS|DG' || row.BLOCO_ID === 'BRASILIA_SACA|DG') ? 'BSBA|DG' : row.BLOCO_ID;
                             registrosLidos.push({
                                 id: id,
                                 operacao: operacaoAtual,
                                 cia: cia,
-                                destino: (row.DESTINO || '').toString().trim(),
+                                destino: destNormImp,
                                 operador: 'EQUIPE',
                                 status: 'PENDENTE',
                                 dados: {
-                                    BLOCO_ID: row.BLOCO_ID,
+                                    BLOCO_ID: blocoIdNormImp,
                                     LACRE_ORIGINAL: lacreOrig,
                                     ignorar_regra_origem: false,
                                     awb: '',
@@ -2684,8 +2734,56 @@
             return 'RESBA';
         }
 
+        // Garante que a planilha Excel (.xlsx) enviada para o Documento Internacional nunca contenha linhas de AWB duplicadas
+        function deduplicarPlanilhaExcelLatamB64(b64DataUri) {
+            if (!b64DataUri || typeof XLSX === 'undefined') return b64DataUri;
+            try {
+                const rawB64 = b64DataUri.replace(/^data:.*;base64,/, '');
+                const wb = XLSX.read(rawB64, { type: 'base64' });
+                const nomeAba = wb.SheetNames[0];
+                if (!nomeAba) return b64DataUri;
+                const sheet = wb.Sheets[nomeAba];
+                const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+                if (!Array.isArray(linhas) || linhas.length <= 2) return b64DataUri;
+
+                const vistas = new Set();
+                const novasLinhas = [];
+                let removeuDuplicata = false;
+
+                for (let r = 0; r < linhas.length; r++) {
+                    const row = linhas[r];
+                    if (r === 0) {
+                        novasLinhas.push(row);
+                        continue;
+                    }
+                    const awbNum = String(row[1] ?? '').replace(/\D/g, '');
+                    if (!awbNum) continue;
+                    if (vistas.has(awbNum)) {
+                        removeuDuplicata = true;
+                        continue;
+                    }
+                    vistas.add(awbNum);
+                    novasLinhas.push(row);
+                }
+
+                if (!removeuDuplicata) return b64DataUri;
+                const novaSheet = XLSX.utils.aoa_to_sheet(novasLinhas);
+                wb.Sheets[nomeAba] = novaSheet;
+                const outB64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+                return 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + outB64;
+            } catch (e) {
+                return b64DataUri;
+            }
+        }
+
+        let _ultimoDisparoAutoFillLatamTs = 0;
         window.abrirPortalLatamAutoFill = function() {
             if (!minutaAberta) return;
+            const agoraTs = Date.now();
+            if (agoraTs - _ultimoDisparoAutoFillLatamTs < 1200) return;
+            _ultimoDisparoAutoFillLatamTs = agoraTs;
+
+            normalizarObjetoMinutaDg(minutaAberta);
             registrarAlvoCapturaLatam(minutaAberta);
             const d = aplicarRegrasMalhaEInjetarBases(minutaAberta);
             const origemRaw = (d.remessa.Origem || 'GRU').toString().trim().toUpperCase();
@@ -2702,33 +2800,32 @@
             const destIata = codigosPortal.destino;
             const prodCode = calcularCodigoProdutoPortalLatam(prodTxt, destIata);
 
-            const b64Excel = obterExcelLatamMinuta(minutaAberta);
+            // Limpa chaves legadas de BSBA CAIXAS DG / BSBA SACA DG no sessionStorage para evitar colisão dupla na extensão
+            const opEscopo = minutaAberta.operacao || operacaoAtual || '';
+            removerSessionSeguro('minuta_excel_latam_BSBA CAIXAS DG', opEscopo);
+            removerSessionSeguro('minuta_excel_latam_BSBA SACA DG', opEscopo);
+
+            const b64ExcelBruto = obterExcelLatamMinuta(minutaAberta);
+            const b64Excel = deduplicarPlanilhaExcelLatamB64(b64ExcelBruto);
+            if (b64Excel && b64Excel !== b64ExcelBruto && minutaAberta.dados) {
+                minutaAberta.dados.doc_excel_b64 = b64Excel;
+                salvarSessionSeguro(`minuta_excel_latam_${(minutaAberta.destino || '').trim().toUpperCase()}`, b64Excel, opEscopo);
+            }
             const nomeArquivoExcel = (minutaAberta.dados && minutaAberta.dados.doc_excel_nome)
                 ? minutaAberta.dados.doc_excel_nome
                 : `${(minutaAberta.destino || 'DOC').trim().toUpperCase()}.xlsx`;
-            const dadosExcelEsp = extrairDadosPlanilhaExcelLatam(minutaAberta);
 
-            const blocoIdRaw = (minutaAberta.dados && minutaAberta.dados.BLOCO_ID) ? String(minutaAberta.dados.BLOCO_ID).trim() : '';
             window.dispatchEvent(new CustomEvent('EnviarExcelLatam', {
                 detail: {
-                    minutaId: minutaAberta.id,
-                    blocoId: blocoIdRaw,
                     destino: (minutaAberta.destino || '').trim().toUpperCase(),
                     destinoIata: destIata,
-                    recebedorIata: codigosPortal.recebedor,
-                    origem: origemRaw,
-                    peso: pesoRaw,
-                    volume: volumeRaw,
-                    produto: prodTxt,
-                    prodCode: prodCode,
-                    awbsEsperadas: dadosExcelEsp.awbs,
                     nomeArquivo: nomeArquivoExcel,
                     b64: b64Excel || null,
-                    ts: Date.now()
+                    ts: agoraTs
                 }
             }));
 
-            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&minuta_id=${encodeURIComponent(minutaAberta.id)}&bloco_id=${encodeURIComponent(blocoIdRaw)}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
+            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
             setTimeout(() => {
                 window.open(urlLatam, '_blank');
             }, 80);
@@ -4540,9 +4637,14 @@
                     const peso = parseFloat(row.PESO) || 0;
                     const vol = parseInt(row.VOLUME) || 0;
                     if ((cia === 'LATAM' || cia === 'GOL') && (peso > 0 || vol > 0)) {
-                        const destStr = (row.DESTINO || '').toString().trim();
+                        const destStr = normalizarNomeDestinoDg((row.DESTINO || '').toString().trim());
                         const destUpper = destStr.toUpperCase();
-                        const id = `MIN_${operacaoAtual.replace(/[^a-zA-Z0-9]/g, '')}_${row.BLOCO_ID}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+                        const blocoIdNorm = (destUpper === 'BSBA DG' || row.BLOCO_ID === 'BRASILIA_CAIXAS|DG' || row.BLOCO_ID === 'BRASILIA_SACA|DG') ? 'BSBA|DG' : row.BLOCO_ID;
+                        row.BLOCO_ID = blocoIdNorm;
+                        if (row.DOC_EXCEL_NOME && /^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i.test(row.DOC_EXCEL_NOME)) {
+                            row.DOC_EXCEL_NOME = String(row.DOC_EXCEL_NOME).replace(/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i, 'BSBA DG');
+                        }
+                        const id = `MIN_${operacaoAtual.replace(/[^a-zA-Z0-9]/g, '')}_${blocoIdNorm}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
                         const lacreOrig = (row.LACRE_ORIGINAL !== undefined && row.LACRE_ORIGINAL !== null) ? String(row.LACRE_ORIGINAL).trim() : '';
                         const origemImportada = (row.ORIGEM || 'GRU').toString().trim().toUpperCase();
 
