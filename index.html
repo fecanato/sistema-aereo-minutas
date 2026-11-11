@@ -2513,6 +2513,7 @@
         window.closeNovaOperacaoModal = function() { document.getElementById('modal-operacao').classList.add('hidden'); }
         window.confirmarOperacao = async function() {
             const nomeOp = document.getElementById('input-op-nome').value.trim(); if(!nomeOp) return; const idOp = '__SYS_OP__' + nomeOp.replace(/[^a-zA-Z0-9]/g, '_'); const agora = Date.now();
+            historicoOperacoes = historicoOperacoes.filter(o => o.id !== idOp && o.nome !== nomeOp);
             if(!operacoesAtivasDb.some(o => o.nome === nomeOp)) { operacoesAtivasDb.unshift({ id: idOp, nome: nomeOp, criado_por: usuarioLogado || 'EQUIPE' }); salvarCacheOperacoes(); }
             closeNovaOperacaoModal(); entrarOperacao(nomeOp); showToast('Operação criada!');
             if(supabaseClient) { await Promise.all([ supabaseClient.from('operacoes').upsert([{ id: idOp, nome: nomeOp, criado_por: usuarioLogado || 'EQUIPE', status: 'ATIVA', criado_em: agora, finalizado_em: null }]), supabaseClient.from('minutas').upsert([{ id: idOp, destino: 'SYS_OP', cia: 'SYS', operador: usuarioLogado || 'EQUIPE', status: 'ATIVA', operacao: nomeOp, dados: { criado_em: agora, criado_por: usuarioLogado } }]) ]); sincronizarTudoComBanco(false); }
@@ -5608,12 +5609,26 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             if (!data || !data.awb_aereo) return;
             const awbLimpo = String(data.awb_aereo || '').trim().toUpperCase();
             if (!awbLimpo || awbLimpo === 'AGUARDANDO_CTE') return;
+            const opEvento = String(data.operacao || '').trim();
+            const dtBrEvento = String(data.flightDateBr || '').trim();
             const blocoIdAlvo = String(data.bloco_id || '').trim().toUpperCase();
             const destAlvo = String(data.destino || '').trim().toUpperCase();
             const iata3Alvo = extrairIataBase(destAlvo);
 
+            const temMinutaExataDaOpEvento = opEvento ? minutasDb.some(m => m.operacao === opEvento) : false;
+
             const candidatas = minutasDb.filter(m => {
-                if (operacaoAtual && m.operacao && m.operacao !== operacaoAtual) return false;
+                if (opEvento) {
+                    if (temMinutaExataDaOpEvento) {
+                        if (m.operacao !== opEvento) return false;
+                    } else if (dtBrEvento) {
+                        if (m.operacao && !String(m.operacao).includes(dtBrEvento)) return false;
+                    } else if (m.operacao && m.operacao !== opEvento) {
+                        return false;
+                    }
+                } else if (operacaoAtual && m.operacao && m.operacao !== operacaoAtual) {
+                    return false;
+                }
                 if (data.cia && (m.cia || '').toUpperCase() !== String(data.cia).toUpperCase()) return false;
                 const mBloco = String(m.dados?.BLOCO_ID || '').trim().toUpperCase();
                 const mDest = String(m.destino || '').trim().toUpperCase();
@@ -5730,7 +5745,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             const ehAguardandoCte = (String(awbVal).toUpperCase() === 'AGUARDANDO_CTE' || String(awbVal).toUpperCase() === 'AGUARDANDO CT-E');
             const evento = {
                 type: 'AWB_AEREA_GERADA',
-                operacao: operacaoAtual,
+                operacao: minuta.operacao || operacaoAtual,
                 minuta_id: minuta.id || '',
                 bloco_id: (minuta.dados && minuta.dados.BLOCO_ID) ? minuta.dados.BLOCO_ID : '',
                 destino: minuta.destino || '',
@@ -5749,10 +5764,11 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             } catch (e) {}
         }
 
-        async function verificarPacotePendenteSistemaAereo() {
-            if (!supabaseClient || !operacaoAtual || processandoPacoteAereo) return;
+        async function verificarPacotePendenteSistemaAereo(opAlvoExplicita = null) {
+            const opAlvoVerif = opAlvoExplicita || operacaoAtual;
+            if (!supabaseClient || !opAlvoVerif || processandoPacoteAereo) return;
             try {
-                const syncRowId = '__SYS_AEREO_SYNC__' + String(operacaoAtual).replace(/[^a-zA-Z0-9]/g, '_');
+                const syncRowId = '__SYS_AEREO_SYNC__' + String(opAlvoVerif).replace(/[^a-zA-Z0-9]/g, '_');
                 const { data, error } = await supabaseClient.from('minutas').select('*').eq('id', syncRowId).maybeSingle();
                 if (!error && data && data.status === 'PENDENTE') {
                     await processarPacoteSistemaAereo(data);
