@@ -1032,6 +1032,30 @@
             return `${opBase}::${chave}`;
         }
 
+        // Garante que o window.sessionStorage contenha EXCLUSIVAMENTE a planilha Excel da minuta aberta no momento.
+        // Isso impede que a extensão da LATAM encontre 2 chaves minuta_excel_latam_* com a mesma IATA de 3 letras
+        // (ex: RECA e RECA DG, BSBA CAIXAS e BSBA DG, VIXA e VIX PALLET, FORA e FORA FORMAL) e injete a AWB duas vezes!
+        function ativarExcelUnicoNoSessionStorageParaPortal(minutaObj, b64ExcelOpcional = null) {
+            if (!minutaObj) return;
+            const opEscopo = minutaObj.operacao || operacaoAtual || '';
+            const destBruto = (minutaObj.destino || '').trim().toUpperCase();
+            const b64 = b64ExcelOpcional || (minutaObj.dados && minutaObj.dados.doc_excel_b64) || null;
+            if (!destBruto || !b64) return;
+            const kEscopo = chaveEscopoOp(`minuta_excel_latam_${destBruto}`, opEscopo);
+            if (!kEscopo) return;
+            try {
+                const remover = [];
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i);
+                    if (k && k.includes('minuta_excel_')) {
+                        remover.push(k);
+                    }
+                }
+                remover.forEach(k => sessionStorage.removeItem(k));
+                sessionStorage.setItem(kEscopo, b64);
+            } catch (e) {}
+        }
+
         function salvarSessionSeguro(chave, valor, opNomeOpcional = '') {
             if (!chave || !valor) return;
             const kEscopo = chaveEscopoOp(chave, opNomeOpcional);
@@ -1050,6 +1074,16 @@
                     st.put({ k: kEscopo, op: (opNomeOpcional || operacaoAtual || '').trim(), v: valor, ts: Date.now() });
                 } catch (e) {}
             });
+
+            // Para planilhas minuta_excel_latam_*, NUNCA popula em massa todas as 26 minutas no window.sessionStorage ao mesmo tempo!
+            // Só grava no window.sessionStorage quando for a minuta atualmente aberta (minutaAberta), limpando as demais antes.
+            if (String(chave).includes('minuta_excel_latam_')) {
+                const destAtivo = (minutaAberta && minutaAberta.destino) ? String(minutaAberta.destino).trim().toUpperCase() : '';
+                if (destAtivo && String(chave).toUpperCase() === `MINUTA_EXCEL_LATAM_${destAtivo}`) {
+                    ativarExcelUnicoNoSessionStorageParaPortal(minutaAberta, valor);
+                }
+                return;
+            }
 
             try {
                 sessionStorage.setItem(kEscopo, valor);
@@ -1275,6 +1309,8 @@
             const fVia    = f.includes('VIA');
             const dDg     = /\bDG\b/.test(d);
             const fDg     = /\bDG\b/.test(f);
+            const dPallet = /\bPALLET\b/.test(d);
+            const fPallet = /\bPALLET\b/.test(f);
             const dFormal = d.includes('FORMAL');
             const fFormal = f.includes('FORMAL');
 
@@ -1282,6 +1318,7 @@
             if (dSaca !== fSaca) return false;
             if (dVia !== fVia) return false;
             if (dDg !== fDg) return false;
+            if (dPallet !== fPallet) return false;
             if (dFormal !== fFormal) return false;
 
             return true;
@@ -1707,7 +1744,7 @@
                 // OTIMIZAÇÃO CRÍTICA DE EGRESS:
                 // Usa projeção JSONB do PostgREST para NUNCA trafegar img_form, img_awb, pdf_gol ou doc_excel_b64 nas listagens periódicas!
                 // Reduz o tráfego de ~15 MB por consulta para ~3 KB (99,9% de economia de Egress)!
-                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
+                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,aguardando_cte_contingencia:dados->aguardando_cte_contingencia,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
 
                 const promessas = [
                     supabaseClient.from('operacoes').select('*').order('criado_em', { ascending: false }),
@@ -2572,10 +2609,10 @@
                         ? `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[10px] font-bold">Origem Importada: ${m.dados.remessa?.Origem || 'GRU'}</span>`
                         : '';
                     const ehManualGol = (m.cia || '').toUpperCase() === 'GOL' && Boolean(m.dados && m.dados.modo_manual_gol);
-                    const temAwb = Boolean(m.dados && m.dados.awb && String(m.dados.awb).trim());
+                    const temAwb = Boolean(m.dados && m.dados.awb && String(m.dados.awb).trim() && String(m.dados.awb).trim().toUpperCase() !== 'AGUARDANDO_CTE');
                     const badgeManualGol = ehManualGol
                         ? (!temAwb
-                            ? `<span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-extrabold flex items-center gap-1">⚠️ AWB PENDENTE (MINUTA MANUAL)</span>`
+                            ? `<span class="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-[10px] font-extrabold flex items-center gap-1">⏳ AGUARDANDO CT-E (CONTINGÊNCIA)</span>`
                             : `<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">📝 Manual • AWB: ${m.dados.awb}</span>`)
                         : '';
                     const btnInserirAwbRapido = (ehManualGol && !temAwb)
@@ -2613,11 +2650,11 @@
                     const corCia = m.cia === 'LATAM' ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400' : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400';
                     const quemConcluiu = (m.dados && m.dados.concluido_por) ? m.dados.concluido_por : (m.operador || 'EQUIPE');
                     const horario = (m.dados && m.dados.horario_conclusao) ? m.dados.horario_conclusao : '--:--';
-                    const temAwbFin = Boolean(m.dados && m.dados.awb && String(m.dados.awb).trim());
+                    const temAwbFin = Boolean(m.dados && m.dados.awb && String(m.dados.awb).trim() && String(m.dados.awb).trim().toUpperCase() !== 'AGUARDANDO_CTE');
                     const ehManualFin = (m.cia || '').toUpperCase() === 'GOL' && Boolean(m.dados && m.dados.modo_manual_gol);
                     const awbTxt = temAwbFin
                         ? `AWB: ${m.dados.awb}${ehManualFin ? ' (Manual)' : ''} • `
-                        : (ehManualFin ? `<span class="text-amber-600 dark:text-amber-400 font-bold">⚠️ AWB Pendente (Minuta Manual)</span> • ` : '');
+                        : (ehManualFin ? `<span class="text-indigo-600 dark:text-indigo-400 font-bold">⏳ Aguardando CT-e no Controle Operacional</span> • ` : '');
                     const btnAwbModalFin = (ehManualFin && !temAwbFin)
                         ? `<button onclick="abrirModalInserirAwbManual('${m.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold transition flex items-center gap-1 shadow-sm" title="Inserir AWB enviado pela GOL"><i data-lucide="plus-circle" class="w-3 h-3"></i> Inserir AWB</button>`
                         : '';
@@ -2795,11 +2832,11 @@
             const ehManualAwbOpcional = (minutaAberta.cia === 'GOL') && Boolean(minutaAberta.dados && minutaAberta.dados.modo_manual_gol);
             const subtituloAwbCard = minutaAberta.cia === 'GOL'
                 ? (ehManualAwbOpcional
-                    ? 'Contingência Manual GOL ativa: o AWB é OPCIONAL para concluir agora. Quando a GOL emitir e enviar o número, basta digitá-lo aqui e clicar em Salvar AWB / Concluir.'
+                    ? 'Contingência Manual GOL ativa: ao concluir, o sistema avisa ao Controle Operacional que está Aguardando CT-e. Assim que você anexar o XML do CT-e lá no Controle Operacional, o AWB é preenchido aqui automaticamente!'
                     : 'Preenchido automaticamente ao anexar o PDF da GOLLOG (ou gere a Minuta Manual caso o site GOL esteja fora do ar).')
                 : 'Preencha o AWB gerado no sistema da companhia aérea antes de concluir.';
 
-            container.innerHTML += `<div class="bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl border ${ehManualAwbOpcional && !valAwb ? 'border-amber-400 dark:border-amber-500/50' : 'border-indigo-200 dark:border-indigo-500/30'} p-5 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4"><div><div class="flex items-center gap-2 flex-wrap"><h3 class="text-sm font-bold text-indigo-900 dark:text-indigo-300">Número do AWB / CT-e Gerado</h3>${ehManualAwbOpcional && !valAwb ? '<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-extrabold uppercase">Opcional na Contingência Manual</span>' : ''}</div><p class="text-xs text-indigo-700/70 dark:text-indigo-400/70 mt-0.5">${subtituloAwbCard}</p></div><div class="flex items-center gap-2 w-full md:w-auto"><input type="text" id="input-awb-minuta" placeholder="${ehManualAwbOpcional ? 'Pendente (Inserir após emissão GOL)' : placeholderAwb}" class="px-4 py-2.5 rounded-xl border border-indigo-300 dark:border-indigo-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64 uppercase" value="${valAwb}">${minutaAberta.status === 'CONCLUÍDA' ? `<button onclick="marcarConcluida()" class="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm whitespace-nowrap">Salvar AWB</button>` : ''}</div></div>`;
+            container.innerHTML += `<div class="bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl border ${ehManualAwbOpcional && !valAwb ? 'border-indigo-400 dark:border-indigo-500/60' : 'border-indigo-200 dark:border-indigo-500/30'} p-5 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4"><div><div class="flex items-center gap-2 flex-wrap"><h3 class="text-sm font-bold text-indigo-900 dark:text-indigo-300">Número do AWB / CT-e Gerado</h3>${ehManualAwbOpcional && !valAwb ? '<span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold uppercase">⏳ Aguardando CT-e (Sincronização Automática via XML)</span>' : ''}</div><p class="text-xs text-indigo-700/70 dark:text-indigo-400/70 mt-0.5">${subtituloAwbCard}</p></div><div class="flex items-center gap-2 w-full md:w-auto"><input type="text" id="input-awb-minuta" placeholder="${ehManualAwbOpcional ? '⏳ Aguardando CT-e (Automático via XML)' : placeholderAwb}" class="px-4 py-2.5 rounded-xl border border-indigo-300 dark:border-indigo-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64 uppercase" value="${valAwb}">${minutaAberta.status === 'CONCLUÍDA' ? `<button onclick="marcarConcluida()" class="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm whitespace-nowrap">Salvar AWB</button>` : ''}</div></div>`;
 
             if (minutaAberta.cia === 'LATAM') { 
                 container.innerHTML += renderBloco('Dados da Remessa', dProcessado.remessa, 'LATAM'); 
@@ -3383,9 +3420,10 @@
                 if (!nomeAba) return b64DataUri;
                 const sheet = wb.Sheets[nomeAba];
                 const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
-                if (!Array.isArray(linhas) || linhas.length <= 2) return b64DataUri;
+                if (!Array.isArray(linhas) || linhas.length <= 1) return b64DataUri;
 
                 const vistas = new Set();
+                const vistasSemZero = new Set();
                 const novasLinhas = [];
                 let removeuDuplicata = false;
 
@@ -3396,12 +3434,27 @@
                         continue;
                     }
                     const awbNum = String(row[1] ?? '').replace(/\D/g, '');
-                    if (!awbNum) continue;
-                    if (vistas.has(awbNum)) {
+                    if (!awbNum) {
+                        removeuDuplicata = true;
+                        continue;
+                    }
+                    const awbSemZero = awbNum.replace(/^0+/, '') || awbNum;
+                    // Verifica duplicata exata, sem zero à esquerda ou por prefixo/sufixo de 10+ dígitos na mesma planilha
+                    let ehDup = vistas.has(awbNum) || vistasSemZero.has(awbSemZero);
+                    if (!ehDup && awbNum.length >= 10) {
+                        for (const jaVista of vistas) {
+                            if (jaVista.length >= 10 && (jaVista.startsWith(awbNum) || awbNum.startsWith(jaVista) || jaVista.endsWith(awbNum) || awbNum.endsWith(jaVista))) {
+                                ehDup = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (ehDup) {
                         removeuDuplicata = true;
                         continue;
                     }
                     vistas.add(awbNum);
+                    vistasSemZero.add(awbSemZero);
                     novasLinhas.push(row);
                 }
 
@@ -3432,23 +3485,24 @@
             const recebedor = encodeURIComponent(codigosPortal.recebedor);
             const destBrutoEnc = encodeURIComponent(codigosPortal.destinoBruto);
             const pesoRaw = parseNumeroUniversal(d.remessa.Peso || 0);
+            const pesoFormatadoPt = String(Math.round(Number(pesoRaw || 0) * 1000) / 1000).replace('.', ',');
             const volumeRaw = parseInt(d.remessa.Volume) || 1;
-            const peso = encodeURIComponent(pesoRaw);
+            const peso = encodeURIComponent(pesoFormatadoPt);
             const volume = encodeURIComponent(volumeRaw);
             const prodTxt = (d.remessa.Produto || 'RESERVADO').toUpperCase();
             const destIata = codigosPortal.destino;
             const prodCode = calcularCodigoProdutoPortalLatam(prodTxt, destIata);
 
-            // Limpa chaves legadas de BSBA CAIXAS DG / BSBA SACA DG no sessionStorage para evitar colisão dupla na extensão
             const opEscopo = minutaAberta.operacao || operacaoAtual || '';
-            removerSessionSeguro('minuta_excel_latam_BSBA CAIXAS DG', opEscopo);
-            removerSessionSeguro('minuta_excel_latam_BSBA SACA DG', opEscopo);
-
             const b64ExcelBruto = obterExcelLatamMinuta(minutaAberta);
             const b64Excel = deduplicarPlanilhaExcelLatamB64(b64ExcelBruto);
-            if (b64Excel && b64Excel !== b64ExcelBruto && minutaAberta.dados) {
+            if (b64Excel && minutaAberta.dados) {
                 minutaAberta.dados.doc_excel_b64 = b64Excel;
+            }
+            // Isola estritamente APENAS a planilha desta minuta no window.sessionStorage antes de disparar para a extensão!
+            if (b64Excel) {
                 salvarSessionSeguro(`minuta_excel_latam_${(minutaAberta.destino || '').trim().toUpperCase()}`, b64Excel, opEscopo);
+                ativarExcelUnicoNoSessionStorageParaPortal(minutaAberta, b64Excel);
             }
             const nomeArquivoExcel = (minutaAberta.dados && minutaAberta.dados.doc_excel_nome)
                 ? minutaAberta.dados.doc_excel_nome
@@ -4434,6 +4488,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     if (ehManualGol) {
                         minutasDb[idx].dados.modo_manual_gol = true;
                         minutasDb[idx].dados.awb_pendente_manual = !val;
+                        minutasDb[idx].dados.aguardando_cte_contingencia = !val;
                     }
                     minutasDb[idx].dados.concluido_por = quemConcluiu;
                     minutasDb[idx].dados.horario_conclusao = horario;
@@ -4456,10 +4511,12 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 
                 renderDashboard();
                 renderCardsRelatorios();
-                showToast(ehManualGol && !val ? 'Minuta Manual concluída! (AWB pendente para inserção posterior)' : 'Minuta concluída!');
+                showToast(ehManualGol && !val ? '⏳ Minuta GOL em Contingência concluída! Controle Operacional avisado (Aguardando CT-e).' : 'Minuta concluída!');
 
                 if (val) {
                     notificarAwbTempoRealSistemaAereo(idx !== -1 ? minutasDb[idx] : minutaAberta, val);
+                } else if (ehManualGol) {
+                    notificarAwbTempoRealSistemaAereo(idx !== -1 ? minutasDb[idx] : minutaAberta, 'AGUARDANDO_CTE');
                 }
                 if(supabaseClient) {
                     const alvoSalvar = idx !== -1 ? minutasDb[idx] : minutaAberta;
@@ -4577,10 +4634,11 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
             if ((minuta.cia || '').toUpperCase() === 'LATAM') {
                 const lacreVal = cloneDados.remessa['Lacre'] !== undefined ? cloneDados.remessa['Lacre'] : (cloneDados.LACRE_ORIGINAL || '-');
+                const pesoLatamVirgula = String(Math.round(Number(pesoNum || 0) * 1000) / 1000).replace('.', ',');
                 cloneDados.remessa = {
                     'Origem': origemFinal || '-',
                     'Volume': volumeVal,
-                    'Peso': pesoNum,
+                    'Peso': pesoLatamVirgula,
                     'Produto': produtoFinal || '-',
                     'Lacre': lacreVal
                 };
@@ -5546,16 +5604,82 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         const syncIdsJaProcessados = new Set();
         let processandoPacoteAereo = false;
 
+        async function aplicarAwbCteRecebidaDoControle(data) {
+            if (!data || !data.awb_aereo) return;
+            const awbLimpo = String(data.awb_aereo || '').trim().toUpperCase();
+            if (!awbLimpo || awbLimpo === 'AGUARDANDO_CTE') return;
+            const blocoIdAlvo = String(data.bloco_id || '').trim().toUpperCase();
+            const destAlvo = String(data.destino || '').trim().toUpperCase();
+            const iata3Alvo = extrairIataBase(destAlvo);
+
+            const candidatas = minutasDb.filter(m => {
+                if (operacaoAtual && m.operacao && m.operacao !== operacaoAtual) return false;
+                if (data.cia && (m.cia || '').toUpperCase() !== String(data.cia).toUpperCase()) return false;
+                const mBloco = String(m.dados?.BLOCO_ID || '').trim().toUpperCase();
+                const mDest = String(m.destino || '').trim().toUpperCase();
+                if (blocoIdAlvo && mBloco && mBloco === blocoIdAlvo) return true;
+                if (destAlvo && mDest === destAlvo) return true;
+                if (iata3Alvo && extrairIataBase(mDest) === iata3Alvo && (!m.dados?.awb || m.dados?.modo_manual_gol || m.dados?.awb_pendente_manual)) return true;
+                return false;
+            });
+
+            if (candidatas.length === 0) return;
+            const alvo = candidatas[0];
+            if (!alvo.dados) alvo.dados = {};
+            const jaTinhaMesmoAwb = String(alvo.dados.awb || '').trim().toUpperCase() === awbLimpo && !alvo.dados.awb_pendente_manual;
+            alvo.dados.awb = awbLimpo;
+            alvo.dados.awb_pendente_manual = false;
+            alvo.dados.aguardando_cte_contingencia = false;
+            if (alvo.status !== 'CONCLUÍDA' && alvo.dados.modo_manual_gol) {
+                alvo.status = 'CONCLUÍDA';
+            }
+
+            if (minutaAberta && minutaAberta.id === alvo.id) {
+                minutaAberta = alvo;
+                const inpDet = document.getElementById('input-awb-minuta');
+                if (inpDet) inpDet.value = awbLimpo;
+            }
+
+            renderDashboard();
+            renderCardsRelatorios();
+            if (!document.getElementById('modal-finalizadas').classList.contains('hidden')) {
+                abrirModalFinalizadas();
+            }
+
+            if (supabaseClient) {
+                await salvarDadosMinutaPreservandoAnexos(alvo, { status: alvo.status });
+            }
+            if (!jaTinhaMesmoAwb) {
+                showToast(`⚡ AWB / CT-e ${awbLimpo} recebido automaticamente do Controle Operacional para ${alvo.destino}!`);
+            }
+        }
+
         function inicializarIntegracaoSistemaAereo() {
             try {
                 busLocalAereo = new BroadcastChannel('fedex_aereo_minutas_channel');
                 busLocalAereo.onmessage = (ev) => {
                     const data = ev.data;
-                    if (data && data.type === 'MINUTAS_EXPORTADAS' && (!data.targetOpNome || data.targetOpNome === operacaoAtual)) {
+                    if (!data) return;
+                    if (data.type === 'MINUTAS_EXPORTADAS' && (!data.targetOpNome || data.targetOpNome === operacaoAtual)) {
                         verificarPacotePendenteSistemaAereo();
+                    } else if (data.type === 'CTE_AWB_VINCULADA_CONTROLE') {
+                        aplicarAwbCteRecebidaDoControle(data);
                     }
                 };
             } catch (e) {}
+
+            window.addEventListener('storage', (ev) => {
+                if (ev.key === 'fedex_cte_awb_auto_sync' && ev.newValue) {
+                    try {
+                        const parsed = JSON.parse(ev.newValue);
+                        if (parsed && parsed.type === 'CTE_AWB_VINCULADA_CONTROLE') {
+                            aplicarAwbCteRecebidaDoControle(parsed);
+                        } else if (parsed && Array.isArray(parsed.items)) {
+                            parsed.items.forEach(it => aplicarAwbCteRecebidaDoControle(it));
+                        }
+                    } catch (e) {}
+                }
+            });
 
             if (!supabaseClient) return;
             try {
@@ -5569,18 +5693,31 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                             verificarPacotePendenteSistemaAereo();
                         }
                     })
+                    .on('broadcast', { event: 'CTE_AWB_VINCULADA_CONTROLE' }, (payload) => {
+                        const data = payload.payload;
+                        if (data) aplicarAwbCteRecebidaDoControle(data);
+                    })
                     .subscribe();
             } catch (e) {}
         }
 
         function notificarMalhaAtualizadaSistemaAereo() {
             if (!Array.isArray(malhaDb) || malhaDb.length === 0) return;
+            try {
+                localStorage.setItem('cache_malha', JSON.stringify(malhaDb));
+                localStorage.setItem('fedex_aereo_malha_cache_v1', JSON.stringify(malhaDb));
+            } catch (e) {}
             const evento = {
                 type: 'MALHA_ATUALIZADA',
                 malha: malhaDb,
                 ts: Date.now()
             };
             try { if (busLocalAereo) busLocalAereo.postMessage(evento); } catch (e) {}
+            try {
+                const bcPesos = new BroadcastChannel('fedex_aereo_pesos_channel');
+                bcPesos.postMessage(evento);
+                bcPesos.close();
+            } catch (e) {}
             try {
                 if (canalRealtimeAereo) {
                     canalRealtimeAereo.send({ type: 'broadcast', event: 'MALHA_ATUALIZADA', payload: evento });
@@ -5590,15 +5727,20 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
         function notificarAwbTempoRealSistemaAereo(minuta, awbVal) {
             if (!minuta || !awbVal) return;
+            const ehAguardandoCte = (String(awbVal).toUpperCase() === 'AGUARDANDO_CTE' || String(awbVal).toUpperCase() === 'AGUARDANDO CT-E');
             const evento = {
                 type: 'AWB_AEREA_GERADA',
                 operacao: operacaoAtual,
+                minuta_id: minuta.id || '',
                 bloco_id: (minuta.dados && minuta.dados.BLOCO_ID) ? minuta.dados.BLOCO_ID : '',
                 destino: minuta.destino || '',
                 cia: minuta.cia || '',
-                awb_aereo: awbVal,
+                awb_aereo: ehAguardandoCte ? 'AGUARDANDO_CTE' : awbVal,
+                aguardando_cte: ehAguardandoCte,
+                modo_manual_gol: Boolean(minuta.dados && minuta.dados.modo_manual_gol),
                 ts: Date.now()
             };
+            try { localStorage.setItem('fedex_minutas_awb_event', JSON.stringify(evento)); } catch (e) {}
             try { if (busLocalAereo) busLocalAereo.postMessage(evento); } catch (e) {}
             try {
                 if (canalRealtimeAereo) {
