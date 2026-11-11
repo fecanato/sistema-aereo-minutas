@@ -2788,6 +2788,7 @@
                         </button>
                         <button id="btn-previa-pdf-gol" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnPreviaGolCls}" ${btnPreviaGolClick}>${btnPreviaGolTxt}</button>
                     </div>
+                    ${buildAiGolPdfStatusStripHtml(minutaAberta, pdfGolSalvo)}
                 </div>`;
             }
 
@@ -3496,117 +3497,257 @@
         }
 
         async function extrairDadosDoPdfGol(arrayBuffer) {
-            if (!window.pdfjsLib) return { cte: '', refInfo: null, jaTemLacre: false, textoCompleto: '', iataDetectadoPdf: '', cidadeDetectadaPdf: '', pesoDetectadoPdf: null, pesoPosicoes: [] };
-            const copiaBuffer = arrayBuffer.slice(0);
-            const loadingTask = window.pdfjsLib.getDocument({ data: copiaBuffer });
-            const pdf = await loadingTask.promise;
+            const resultadoVazio = {
+                cte: '',
+                refInfo: null,
+                jaTemLacre: false,
+                textoCompleto: '',
+                iataDetectadoPdf: '',
+                cidadeDetectadaPdf: '',
+                origemDetectadaPdf: '',
+                cnpjDestDetectadoPdf: '',
+                cepDestDetectadoPdf: '',
+                servicoDetectadoPdf: '',
+                volumeDetectadoPdf: null,
+                pesoDetectadoPdf: null,
+                valorMercadoriaDetectadoPdf: null,
+                apoliceDetectadaPdf: '',
+                lacreDetectadoPdf: '',
+                ehAcroFormManual: false,
+                pesoPosicoes: []
+            };
+            if (!window.pdfjsLib && !window.PDFLib) return resultadoVazio;
 
             let textoCompleto = '';
             let refInfo = null;
             let jaTemLacre = false;
             const pesoPosicoes = [];
             let pesoDetectadoPdf = null;
+            let volumeDetectadoPdf = null;
+            let origemDetectadaPdf = '';
+            let iataDetectadoPdf = '';
+            let cidadeDetectadaPdf = '';
+            let cnpjDestDetectadoPdf = '';
+            let cepDestDetectadoPdf = '';
+            let servicoDetectadoPdf = '';
+            let valorMercadoriaDetectadoPdf = null;
+            let apoliceDetectadaPdf = '';
+            let lacreDetectadoPdf = '';
+            let cte = '';
+            let ehAcroFormManual = false;
 
-            for (let p = 1; p <= pdf.numPages; p++) {
-                const page = await pdf.getPage(p);
-                const textContent = await page.getTextContent();
-                const pageStr = textContent.items.map(it => it.str).join(' ');
-                textoCompleto += ' ' + pageStr;
+            // 1. Inspeciona campos AcroForm via PDFLib (captura 100% dos campos da Minuta Eletrônica Manual GOL ou PDF editável)
+            if (window.PDFLib) {
+                try {
+                    const copiaBytesAcro = arrayBuffer.slice(0);
+                    const pdfDocAcro = await window.PDFLib.PDFDocument.load(copiaBytesAcro, { ignoreEncryption: true });
+                    const formAcro = pdfDocAcro.getForm();
+                    const fieldsAcro = formAcro.getFields();
+                    if (Array.isArray(fieldsAcro) && fieldsAcro.length > 0) {
+                        const lerCampoAcro = (nome) => {
+                            try {
+                                const f = formAcro.getField(nome);
+                                if (!f) return '';
+                                if (typeof f.getText === 'function') return String(f.getText() || '').trim();
+                                if (typeof f.getSelected === 'function') {
+                                    const sel = f.getSelected();
+                                    return Array.isArray(sel) ? String(sel[0] || '').trim() : String(sel || '').trim();
+                                }
+                            } catch (e) {}
+                            return '';
+                        };
+                        const origAcro = lerCampoAcro('Aeroporto_origem') || lerCampoAcro('Cidade_Remetente');
+                        const destAcro = lerCampoAcro('Aeroporto_destino');
+                        const cidDestAcro = lerCampoAcro('Cidade_Destinatario');
+                        const cnpjDestAcro = lerCampoAcro('CPF_CNPJ_Destinatario');
+                        const cepDestAcro = lerCampoAcro('CEP_Destinatario');
+                        const servAcro = lerCampoAcro('Servico_GOLLOG');
+                        const unidAcro = lerCampoAcro('Unidades_1');
+                        const pesoAcro = lerCampoAcro('Peso_1');
+                        const valMercAcro = lerCampoAcro('Valor_Mercadoria');
+                        const apoliceAcro = lerCampoAcro('Numero_Apolice');
+                        const instrAcro = lerCampoAcro('Instrucoes_Especiais');
+                        const cteAcro = lerCampoAcro('CTe');
 
-                const itemsCoord = textContent.items.map(it => ({
-                    str: String(it.str || ''),
-                    norm: normalizarTextoComparacao(it.str || ''),
-                    x: it.transform ? it.transform[4] : 0,
-                    y: it.transform ? it.transform[5] : 0,
-                    width: it.width || (String(it.str || '').trim().length * 5.8),
-                    height: it.height || (it.transform ? Math.abs(it.transform[3]) : 11) || 11
-                })).filter(it => it.str.trim().length > 0);
-
-                // Localiza todos os rótulos "PESO TOTAL" na página para encontrar o valor exatamente abaixo dele
-                const labelsPesoTotal = [];
-                for (let i = 0; i < itemsCoord.length; i++) {
-                    const it = itemsCoord[i];
-                    if (it.norm.includes('PESO TOTAL')) {
-                        labelsPesoTotal.push({ x: it.x, y: it.y });
-                    } else if (it.norm === 'PESO') {
-                        const adjTotal = itemsCoord.find(o => Math.abs(o.y - it.y) < 5 && o.x >= it.x && (o.x - it.x) < 75 && o.norm.startsWith('TOTAL'));
-                        if (adjTotal) labelsPesoTotal.push({ x: it.x, y: it.y });
+                        if (origAcro || destAcro || cidDestAcro || unidAcro || pesoAcro || servAcro) {
+                            ehAcroFormManual = true;
+                            textoCompleto += ` [ACROFORM] ORIGEM:${origAcro} DESTINO:${destAcro} CIDADE_DEST:${cidDestAcro} CNPJ_DEST:${cnpjDestAcro} CEP_DEST:${cepDestAcro} SERVICO:${servAcro} UNIDADES:${unidAcro} PESO:${pesoAcro} VALOR:${valMercAcro} APOLICE:${apoliceAcro} INSTRUCOES:${instrAcro} CTE:${cteAcro} `;
+                        }
+                        if (origAcro) {
+                            const origUp = normalizarTextoComparacao(origAcro);
+                            if (origUp.includes('GRU') || origUp.includes('GUARULHOS')) origemDetectadaPdf = 'GRU';
+                            else if (origUp.includes('CGH') || origUp.includes('CONGONHAS')) origemDetectadaPdf = 'CGH';
+                            else origemDetectadaPdf = origUp.slice(0, 3);
+                        }
+                        if (destAcro) {
+                            const dUp = normalizarTextoComparacao(destAcro);
+                            if (dUp.length === 3) iataDetectadoPdf = dUp;
+                            else if (!cidadeDetectadaPdf) cidadeDetectadaPdf = dUp;
+                        }
+                        if (cidDestAcro) cidadeDetectadaPdf = cidDestAcro.trim();
+                        if (cnpjDestAcro) cnpjDestDetectadoPdf = cnpjDestAcro.replace(/\D/g, '');
+                        if (cepDestAcro) cepDestDetectadoPdf = cepDestAcro.replace(/\D/g, '');
+                        if (servAcro) servicoDetectadoPdf = servAcro.trim().toUpperCase();
+                        if (unidAcro) {
+                            const vNum = parseInt(unidAcro.replace(/\D/g, ''), 10);
+                            if (!isNaN(vNum) && vNum > 0) volumeDetectadoPdf = vNum;
+                        }
+                        if (pesoAcro) {
+                            const pNum = parseNumeroUniversal(pesoAcro);
+                            if (!isNaN(pNum) && pNum > 0) pesoDetectadoPdf = pNum;
+                        }
+                        if (valMercAcro) {
+                            const vmNum = parseNumeroUniversal(valMercAcro);
+                            if (!isNaN(vmNum) && vmNum > 0) valorMercadoriaDetectadoPdf = vmNum;
+                        }
+                        if (apoliceAcro) apoliceDetectadaPdf = apoliceAcro.trim();
+                        if (instrAcro) {
+                            const mLcr = instrAcro.match(/(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*([0-9/\s-]{4,20})/i);
+                            if (mLcr) {
+                                lacreDetectadoPdf = mLcr[1].trim();
+                                jaTemLacre = true;
+                            }
+                        }
+                        if (cteAcro && /\d{6,12}/.test(cteAcro)) {
+                            cte = cteAcro.replace(/\D/g, '');
+                        }
                     }
-                }
+                } catch (eAcro) {}
+            }
 
-                for (const lbl of labelsPesoTotal) {
-                    const abaixo = itemsCoord.filter(it =>
-                        it.x >= (lbl.x - 15) &&
-                        it.x <= (lbl.x + 95) &&
-                        (lbl.y - it.y) >= 6 &&
-                        (lbl.y - it.y) <= 34 &&
-                        !it.norm.includes('SEGURO') &&
-                        !it.norm.includes('VOLUMES') &&
-                        !it.norm.includes('DIMENS') &&
-                        !it.norm.includes('PESO')
-                    ).sort((a, b) => a.x - b.x);
+            // 2. Extrai texto e coordenadas espaciais via pdf.js (captura CT-e/Minuta emitida no site GOLLOG)
+            if (window.pdfjsLib) {
+                const copiaBuffer = arrayBuffer.slice(0);
+                const loadingTask = window.pdfjsLib.getDocument({ data: copiaBuffer });
+                const pdf = await loadingTask.promise;
 
-                    if (abaixo.length > 0) {
-                        const textoVal = abaixo.map(c => c.str.trim()).join(' ');
-                        const mNum = textoVal.match(/(\d+(?:[.,]\d+)?)/);
-                        if (mNum) {
-                            const valNum = parseNumeroUniversal(mNum[1]);
-                            if (valNum > 0) {
-                                if (pesoDetectadoPdf === null) pesoDetectadoPdf = valNum;
-                                const minX = Math.min(...abaixo.map(c => c.x));
-                                const maxX = Math.max(...abaixo.map(c => c.x + (c.width || 18)));
-                                const baseY = abaixo[0].y;
-                                const maxH = Math.max(...abaixo.map(c => c.height || 11), 11);
-                                pesoPosicoes.push({
-                                    pageIndex: p - 1,
-                                    x: minX,
-                                    y: baseY,
-                                    width: Math.max(maxX - minX, 24),
-                                    height: maxH,
-                                    rawText: textoVal,
-                                    valor: valNum
-                                });
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const page = await pdf.getPage(p);
+                    const textContent = await page.getTextContent();
+                    const pageStr = textContent.items.map(it => it.str).join(' ');
+                    textoCompleto += ' ' + pageStr;
+
+                    const itemsCoord = textContent.items.map(it => ({
+                        str: String(it.str || ''),
+                        norm: normalizarTextoComparacao(it.str || ''),
+                        x: it.transform ? it.transform[4] : 0,
+                        y: it.transform ? it.transform[5] : 0,
+                        width: it.width || (String(it.str || '').trim().length * 5.8),
+                        height: it.height || (it.transform ? Math.abs(it.transform[3]) : 11) || 11
+                    })).filter(it => it.str.trim().length > 0);
+
+                    // Localiza rótulos "PESO TOTAL" na página para encontrar o valor exatamente abaixo dele
+                    const labelsPesoTotal = [];
+                    const labelsVolumes = [];
+                    for (let i = 0; i < itemsCoord.length; i++) {
+                        const it = itemsCoord[i];
+                        if (it.norm.includes('PESO TOTAL') || it.norm === 'PESO REAL' || it.norm === 'PESO BRUTO') {
+                            labelsPesoTotal.push({ x: it.x, y: it.y });
+                        } else if (it.norm === 'PESO') {
+                            const adjTotal = itemsCoord.find(o => Math.abs(o.y - it.y) < 5 && o.x >= it.x && (o.x - it.x) < 75 && (o.norm.startsWith('TOTAL') || o.norm.startsWith('REAL')));
+                            if (adjTotal) labelsPesoTotal.push({ x: it.x, y: it.y });
+                        }
+                        if (it.norm === 'VOLUMES' || it.norm === 'QUANTIDADE' || it.norm === 'QTD VOLUMES' || it.norm === 'UNIDADES') {
+                            labelsVolumes.push({ x: it.x, y: it.y });
+                        }
+                    }
+
+                    for (const lbl of labelsPesoTotal) {
+                        const abaixo = itemsCoord.filter(it =>
+                            it.x >= (lbl.x - 15) &&
+                            it.x <= (lbl.x + 95) &&
+                            (lbl.y - it.y) >= 6 &&
+                            (lbl.y - it.y) <= 34 &&
+                            !it.norm.includes('SEGURO') &&
+                            !it.norm.includes('VOLUMES') &&
+                            !it.norm.includes('DIMENS') &&
+                            !it.norm.includes('PESO')
+                        ).sort((a, b) => a.x - b.x);
+
+                        if (abaixo.length > 0) {
+                            const textoVal = abaixo.map(c => c.str.trim()).join(' ');
+                            const mNum = textoVal.match(/(\d+(?:[.,]\d+)?)/);
+                            if (mNum) {
+                                const valNum = parseNumeroUniversal(mNum[1]);
+                                if (valNum > 0) {
+                                    if (pesoDetectadoPdf === null) pesoDetectadoPdf = valNum;
+                                    const minX = Math.min(...abaixo.map(c => c.x));
+                                    const maxX = Math.max(...abaixo.map(c => c.x + (c.width || 18)));
+                                    const baseY = abaixo[0].y;
+                                    const maxH = Math.max(...abaixo.map(c => c.height || 11), 11);
+                                    pesoPosicoes.push({
+                                        pageIndex: p - 1,
+                                        x: minX,
+                                        y: baseY,
+                                        width: Math.max(maxX - minX, 24),
+                                        height: maxH,
+                                        rawText: textoVal,
+                                        valor: valNum
+                                    });
+                                }
                             }
                         }
                     }
-                }
 
-                // Fallback na página caso o texto do peso ("30kg") esteja isolado e o header tenha vindo diferente
-                if (pesoPosicoes.filter(pp => pp.pageIndex === p - 1).length === 0) {
-                    for (const it of itemsCoord) {
-                        const mKg = it.str.trim().match(/^(\d+(?:[.,]\d+)?)\s*kg$/i);
-                        if (mKg) {
-                            const valNum = parseNumeroUniversal(mKg[1]);
-                            if (valNum > 0) {
-                                if (pesoDetectadoPdf === null) pesoDetectadoPdf = valNum;
-                                pesoPosicoes.push({
-                                    pageIndex: p - 1,
-                                    x: it.x,
-                                    y: it.y,
-                                    width: Math.max(it.width || 24, 24),
-                                    height: it.height || 11,
-                                    rawText: it.str.trim(),
-                                    valor: valNum
-                                });
+                    // Extrai VOLUME pelas coordenadas abaixo do rótulo VOLUMES / QUANTIDADE
+                    if (volumeDetectadoPdf === null) {
+                        for (const lblV of labelsVolumes) {
+                            const abaixoV = itemsCoord.filter(it =>
+                                it.x >= (lblV.x - 15) &&
+                                it.x <= (lblV.x + 80) &&
+                                (lblV.y - it.y) >= 6 &&
+                                (lblV.y - it.y) <= 34 &&
+                                /^\d{1,4}$/.test(it.str.trim())
+                            ).sort((a, b) => a.x - b.x);
+                            if (abaixoV.length > 0) {
+                                const vLido = parseInt(abaixoV[0].str.trim(), 10);
+                                if (!isNaN(vLido) && vLido > 0) {
+                                    volumeDetectadoPdf = vLido;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                if (p === 1) {
-                    if (/\b(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*\d{4,8}\b/i.test(pageStr)) {
-                        jaTemLacre = true;
+                    // Fallback na página caso o texto do peso ("30kg") esteja isolado
+                    if (pesoPosicoes.filter(pp => pp.pageIndex === p - 1).length === 0) {
+                        for (const it of itemsCoord) {
+                            const mKg = it.str.trim().match(/^(\d+(?:[.,]\d+)?)\s*kg$/i);
+                            if (mKg) {
+                                const valNum = parseNumeroUniversal(mKg[1]);
+                                if (valNum > 0) {
+                                    if (pesoDetectadoPdf === null) pesoDetectadoPdf = valNum;
+                                    pesoPosicoes.push({
+                                        pageIndex: p - 1,
+                                        x: it.x,
+                                        y: it.y,
+                                        width: Math.max(it.width || 24, 24),
+                                        height: it.height || 11,
+                                        rawText: it.str.trim(),
+                                        valor: valNum
+                                    });
+                                }
+                            }
+                        }
                     }
-                    for (const item of textContent.items) {
-                        const s = (item.str || '').toUpperCase();
-                        if (s.includes('REFERÊNCIA') || s.includes('REFERENCIA')) {
-                            const yCoord = item.transform[5];
-                            if (yCoord > 400 && (!refInfo || yCoord > refInfo.y)) {
-                                refInfo = {
-                                    x: item.transform[4],
-                                    y: yCoord,
-                                    height: item.height || Math.abs(item.transform[3]) || 11
-                                };
+
+                    if (p === 1) {
+                        const mLacrePag = pageStr.match(/\b(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*(\d{4,8})\b/i);
+                        if (mLacrePag) {
+                            jaTemLacre = true;
+                            if (!lacreDetectadoPdf) lacreDetectadoPdf = mLacrePag[1];
+                        }
+                        for (const item of textContent.items) {
+                            const s = (item.str || '').toUpperCase();
+                            if (s.includes('REFERÊNCIA') || s.includes('REFERENCIA')) {
+                                const yCoord = item.transform[5];
+                                if (yCoord > 400 && (!refInfo || yCoord > refInfo.y)) {
+                                    refInfo = {
+                                        x: item.transform[4],
+                                        y: yCoord,
+                                        height: item.height || Math.abs(item.transform[3]) || 11
+                                    };
+                                }
                             }
                         }
                     }
@@ -3620,29 +3761,52 @@
                 }
             }
 
-            let cte = '';
-            const matchCte = textoCompleto.match(/CT-?e\s*[:\-]?\s*(\d{10,12})/i);
-            if (matchCte) {
-                cte = matchCte[1];
-            } else {
-                const matchBarcode = textoCompleto.match(/\b(127\d{8})\d{4}\b/);
-                if (matchBarcode) {
-                    cte = matchBarcode[1];
-                } else {
-                    const match11 = textoCompleto.match(/\b(127\d{8})\b/);
-                    if (match11) cte = match11[1];
+            if (volumeDetectadoPdf === null) {
+                const mVolTxt = textoCompleto.match(/\b(?:VOLUMES|QUANTIDADE(?:\s+DE\s+VOLUMES)?|QTD\.?\s*VOLUMES)\s*[:\-]?\s*(\d{1,4})\b/i);
+                if (mVolTxt) {
+                    const vNum = parseInt(mVolTxt[1], 10);
+                    if (!isNaN(vNum) && vNum > 0) volumeDetectadoPdf = vNum;
                 }
             }
 
-            let iataDetectadoPdf = '';
-            let cidadeDetectadaPdf = '';
+            if (!cte) {
+                const matchCte = textoCompleto.match(/CT-?e\s*[:\-]?\s*(\d{10,12})/i);
+                if (matchCte) {
+                    cte = matchCte[1];
+                } else {
+                    const matchBarcode = textoCompleto.match(/\b(127\d{8})\d{4}\b/);
+                    if (matchBarcode) {
+                        cte = matchBarcode[1];
+                    } else {
+                        const match11 = textoCompleto.match(/\b(127\d{8})\b/);
+                        if (match11) cte = match11[1];
+                    }
+                }
+            }
 
-            const matchLojaRetirada = textoCompleto.match(/LOJA\s+PARA\s+RETIRADA[\s\S]{0,120}?\b([A-Z]{3})\s*-\s*([A-Za-zÀ-ÿ\s]{3,25})/i);
-            if (matchLojaRetirada) {
-                const sig = matchLojaRetirada[1].toUpperCase();
-                if (sig !== 'GRU' && sig !== 'CGH' && sig !== 'VCP') {
-                    iataDetectadoPdf = sig;
-                    cidadeDetectadaPdf = matchLojaRetirada[2].trim();
+            if (!origemDetectadaPdf) {
+                const mOrig = textoCompleto.match(/(?:ORIGEM|AEROPORTO\s+ORIGEM|LOJA\s+EMISSORA)[\s\S]{0,60}?\b(GRU|CGH|VCP|GIG|BSB|FOR|MAO|REC|SSA)\b/i);
+                if (mOrig) origemDetectadaPdf = mOrig[1].toUpperCase();
+                else if (/\bGRU\s*-\s*(?:SAO\s+PAULO|GUARULHOS)/i.test(textoCompleto) || /\bGUARULHOS\b/i.test(textoCompleto)) {
+                    origemDetectadaPdf = 'GRU';
+                }
+            }
+
+            if (!servicoDetectadoPdf) {
+                const textoNormFull = normalizarTextoComparacao(textoCompleto);
+                if (/\bURGENTE\s+FRACIONADO\b/.test(textoNormFull)) servicoDetectadoPdf = 'URGENTE FRACIONADO';
+                else if (/\bPRODUTO\s*[:\-]?\s*RAPIDO\b|\bSERVICO(?:\s+GOLLOG)?\s*[:\-]?\s*RAPIDO\b|\bGOLLOG\s+RAPIDO\b|\bEXPRESSO\b/.test(textoNormFull)) servicoDetectadoPdf = 'RÁPIDO';
+                else if (/\bPRODUTO\s*[:\-]?\s*ECONOMICO\b|\bSERVICO(?:\s+GOLLOG)?\s*[:\-]?\s*ECONOMICO\b|\bGOLLOG\s+ECONOMICO\b|\bSTANDARD\b/.test(textoNormFull)) servicoDetectadoPdf = 'ECONOMICO';
+            }
+
+            if (!iataDetectadoPdf) {
+                const matchLojaRetirada = textoCompleto.match(/LOJA\s+PARA\s+RETIRADA[\s\S]{0,120}?\b([A-Z]{3})\s*-\s*([A-Za-zÀ-ÿ\s]{3,25})/i);
+                if (matchLojaRetirada) {
+                    const sig = matchLojaRetirada[1].toUpperCase();
+                    if (sig !== 'GRU' && sig !== 'CGH' && sig !== 'VCP') {
+                        iataDetectadoPdf = sig;
+                        cidadeDetectadaPdf = matchLojaRetirada[2].trim();
+                    }
                 }
             }
 
@@ -3669,7 +3833,42 @@
                 }
             }
 
-            return { cte, refInfo, jaTemLacre, textoCompleto, iataDetectadoPdf, cidadeDetectadaPdf, pesoDetectadoPdf, pesoPosicoes };
+            return {
+                cte,
+                refInfo,
+                jaTemLacre,
+                textoCompleto,
+                iataDetectadoPdf,
+                cidadeDetectadaPdf,
+                origemDetectadaPdf,
+                cnpjDestDetectadoPdf,
+                cepDestDetectadoPdf,
+                servicoDetectadoPdf,
+                volumeDetectadoPdf,
+                pesoDetectadoPdf,
+                valorMercadoriaDetectadoPdf,
+                apoliceDetectadaPdf,
+                lacreDetectadoPdf,
+                ehAcroFormManual,
+                pesoPosicoes
+            };
+        }
+
+        function servicoGolCompativelPortal(servicoLidoStr, servicoEsperadoStr) {
+            const lido = normalizarTextoComparacao(servicoLidoStr);
+            const esp = normalizarTextoComparacao(servicoEsperadoStr);
+            if (!lido || !esp) return true;
+            if (lido === esp || lido.includes(esp) || esp.includes(lido)) return true;
+            const espRapido = esp.includes('RAPIDO') || esp.includes('EXPRESS');
+            const espEcon = esp.includes('ECONOMICO') || esp.includes('STANDARD');
+            const espUrg = esp.includes('URGENTE');
+            const lidoRapido = lido.includes('RAPIDO') || lido.includes('EXPRESS');
+            const lidoEcon = lido.includes('ECONOMICO') || lido.includes('STANDARD');
+            const lidoUrg = lido.includes('URGENTE');
+            if (espRapido && (lidoEcon || lidoUrg)) return false;
+            if (espEcon && (lidoRapido || lidoUrg)) return false;
+            if (espUrg && (lidoRapido || lidoEcon)) return false;
+            return true;
         }
 
         function validarDestinoDoPdfGolContraMinuta(minuta, dadosPdf) {
@@ -3688,7 +3887,14 @@
                 const descEsperado = cidadeEsperada ? `${iataEsperado} (${cidadeEsperada})` : iataEsperado;
                 return {
                     valido: false,
-                    mensagem: `Este PDF pertence ao destino ${descEncontrado}, mas você está na minuta de ${descEsperado}! Verifique se selecionou o arquivo correto.`
+                    mensagem: `Destino divergente: este PDF pertence ao destino "${descEncontrado}", mas a minuta aberta é "${descEsperado}" (${minuta.destino}).`
+                };
+            }
+
+            if (cidadePdfNorm && cidadeEsperada && cidadePdfNorm.length >= 3 && !cidadePdfNorm.includes(cidadeEsperada) && !cidadeEsperada.includes(cidadePdfNorm) && iataPdf !== iataEsperado) {
+                return {
+                    valido: false,
+                    mensagem: `Cidade de destino divergente no PDF: preenchido "${dadosPdf.cidadeDetectadaPdf}", mas a minuta exige "${cidadeEsperada}" (${minuta.destino}).`
                 };
             }
 
@@ -3700,11 +3906,88 @@
                 const descDetectado = iataPdf ? ` (Destino lido no PDF: ${iataPdf}${cidadePdfNorm ? ' - ' + cidadePdfNorm : ''})` : '';
                 return {
                     valido: false,
-                    mensagem: `O destino ou cidade da minuta (${descEsperado}) não foi encontrado neste PDF${descDetectado}. Verifique se anexou o PDF da minuta correta!`
+                    mensagem: `O destino da minuta (${descEsperado}) não foi encontrado neste PDF${descDetectado}. Verifique se anexou o PDF da minuta correta!`
                 };
             }
 
             return { valido: true, cidadeConfirmada: cidadeEsperada || iataEsperado };
+        }
+
+        // Auditoria IA completa para documentos da GOL (tanto CT-e / PDF anexado do site GOLLOG quanto Minuta Eletrônica Manual GOL)
+        function auditarDocumentoPdfGolPelaIa(minuta, dadosPdf, exigirPesoExato = false) {
+            const divergencias = [];
+            if (!minuta || !dadosPdf) return { valido: false, divergencias: ['Documento GOL vazio ou inválido.'], resumoCampos: '' };
+
+            const dProc = aplicarRegrasMalhaEInjetarBases(minuta);
+            const baseDest = buscarBasePorDestino(minuta.destino);
+            const iataEsperado = extrairIataBase(minuta.destino);
+            const origemEsperada = 'GRU';
+            const volumeEsperado = parseInt(minuta.dados?.remessa?.Volume ?? dProc.remessa?.['QUANTIDADE'] ?? 0, 10) || 0;
+            const pesoEsperado = parseNumeroUniversal(minuta.dados?.remessa?.Peso ?? dProc.remessa?.['PESO TOTAL'] ?? 0);
+            const servicoEsperado = String(dProc.remessa?.['PRODUTO'] || 'RÁPIDO').trim().toUpperCase();
+            const valorEsperado = parseNumeroUniversal(dProc.seguro?.['VALOR DECLARADO'] ?? minuta.dados?.remessa?.Valor ?? 0);
+            const lacreEsperado = String(dProc.LACRE_ORIGINAL || minuta.dados?.LACRE_ORIGINAL || minuta.dados?.remessa?.Lacre || '').trim();
+
+            // 1. Destino / Cidade
+            const valDest = validarDestinoDoPdfGolContraMinuta(minuta, dadosPdf);
+            if (!valDest.valido) {
+                divergencias.push(valDest.mensagem);
+            }
+
+            // 2. Origem
+            if (dadosPdf.origemDetectadaPdf && dadosPdf.origemDetectadaPdf !== origemEsperada) {
+                divergencias.push(`Origem divergente no PDF GOL: consta "${dadosPdf.origemDetectadaPdf}", mas o sistema exige "${origemEsperada}".`);
+            }
+
+            // 3. CNPJ do Destinatário (quando presente no PDF)
+            if (dadosPdf.cnpjDestDetectadoPdf && baseDest && baseDest.cnpj) {
+                const cnpjEspLimpo = String(baseDest.cnpj).replace(/\D/g, '');
+                if (cnpjEspLimpo.length >= 11 && dadosPdf.cnpjDestDetectadoPdf.length >= 11 && dadosPdf.cnpjDestDetectadoPdf !== cnpjEspLimpo) {
+                    divergencias.push(`CNPJ do Destinatário divergente no PDF GOL: consta "${dadosPdf.cnpjDestDetectadoPdf}", mas a base ${minuta.destino} exige "${baseDest.cnpj}".`);
+                }
+            }
+
+            // 4. Volume / Quantidade
+            if (dadosPdf.volumeDetectadoPdf !== null && !isNaN(dadosPdf.volumeDetectadoPdf) && volumeEsperado > 0) {
+                if (dadosPdf.volumeDetectadoPdf !== volumeEsperado) {
+                    divergencias.push(`Volume divergente no PDF GOL: consta "${dadosPdf.volumeDetectadoPdf} vol", mas o sistema exige "${volumeEsperado} vol".`);
+                }
+            }
+
+            // 5. Produto / Serviço GOLLOG
+            if (dadosPdf.servicoDetectadoPdf && !servicoGolCompativelPortal(dadosPdf.servicoDetectadoPdf, servicoEsperado)) {
+                divergencias.push(`Produto/Serviço divergente no PDF GOL: consta "${dadosPdf.servicoDetectadoPdf}", mas a malha exige "${servicoEsperado}".`);
+            }
+
+            // 6. Peso (exigido estritamente na Minuta Manual ou quando exigirPesoExato=true)
+            if (exigirPesoExato && dadosPdf.pesoDetectadoPdf !== null && !isNaN(dadosPdf.pesoDetectadoPdf) && pesoEsperado > 0) {
+                if (Math.abs(dadosPdf.pesoDetectadoPdf - pesoEsperado) > 0.05) {
+                    divergencias.push(`Peso divergente no PDF GOL: consta "${dadosPdf.pesoDetectadoPdf} kg", mas o sistema exige "${pesoEsperado} kg".`);
+                }
+            }
+
+            // 7. Valor da Mercadoria e Lacre (em Minuta Manual GOL)
+            if (dadosPdf.ehAcroFormManual) {
+                if (dadosPdf.valorMercadoriaDetectadoPdf !== null && valorEsperado > 0 && Math.abs(dadosPdf.valorMercadoriaDetectadoPdf - valorEsperado) > 0.5) {
+                    divergencias.push(`Valor Declarado divergente na Minuta Manual GOL: consta "R$ ${dadosPdf.valorMercadoriaDetectadoPdf.toFixed(2)}", mas o sistema exige "R$ ${valorEsperado.toFixed(2)}".`);
+                }
+                const temLacreEsp = Boolean(lacreEsperado && lacreEsperado !== '-' && lacreEsperado.toLowerCase() !== 'undefined');
+                if (temLacreEsp && dadosPdf.lacreDetectadoPdf && !lacreEsperado.includes(dadosPdf.lacreDetectadoPdf) && !dadosPdf.lacreDetectadoPdf.includes(lacreEsperado)) {
+                    divergencias.push(`Lacre divergente na Minuta Manual GOL: consta "${dadosPdf.lacreDetectadoPdf}", mas o sistema exige "${lacreEsperado}".`);
+                }
+            }
+
+            const pesoResumo = (minuta.dados && minuta.dados.peso_pdf_editado)
+                ? minuta.dados.peso_pdf_editado
+                : `${dadosPdf.pesoDetectadoPdf ?? pesoEsperado}kg`;
+            const resumoCampos = `Origem (${origemEsperada}), Destino (${iataEsperado} - ${valDest.cidadeConfirmada || iataEsperado}), Volume (${dadosPdf.volumeDetectadoPdf ?? volumeEsperado} vol), Peso (${pesoResumo}), Serviço (${dadosPdf.servicoDetectadoPdf || servicoEsperado})${lacreEsperado && lacreEsperado !== '-' ? ', Lacre (' + lacreEsperado + ')' : ''}${dadosPdf.cte ? ' e CT-e (' + dadosPdf.cte + ')' : ''}`;
+
+            return {
+                valido: divergencias.length === 0,
+                divergencias,
+                valDest,
+                resumoCampos
+            };
         }
 
         async function carimbarLacreNoPdfGol(arrayBuffer, lacreStr, refInfo, jaTemLacre, opcoesPeso = null) {
@@ -3753,7 +4036,6 @@
                     const h = pos.height || 11;
                     const w = Math.max(pos.width || 28, 28);
 
-                    // 1. Tampa o valor que foi colocado no site (ex: 30kg) com um bloco branco opaco + "xxx" discreto ou limpeza total
                     pg.drawRectangle({
                         x: pos.x - 2,
                         y: pos.y - 2.5,
@@ -3762,7 +4044,6 @@
                         color: rgb(1, 1, 1)
                     });
 
-                    // Escreve "xxx" sobre a posição original tampada e o VALOR REAL (ex: 40kg) logo ao lado, exatamente como no padrão operacional
                     const textoTampado = 'xxx';
                     pg.drawText(textoTampado, {
                         x: pos.x,
@@ -3802,18 +4083,26 @@
             const opEscopo = minutaAberta.operacao || operacaoAtual || '';
             salvarSessionSeguro(`minuta_pdf_gol_id_${minutaAberta.id}`, pdfDataUriEditado, opEscopo);
 
+            const auditoriaFinal = auditarDocumentoPdfGolPelaIa(minutaAberta, dadosPdf, false);
+
             const idx = minutasDb.findIndex(m => m.id === minutaAberta.id);
             if (idx !== -1) {
                 if (!minutasDb[idx].dados) minutasDb[idx].dados = {};
                 minutasDb[idx].dados.pdf_gol = pdfDataUriEditado;
-                minutasDb[idx].dados.modo_manual_gol = false;
-                minutasDb[idx].dados.awb_pendente_manual = false;
+                minutasDb[idx].dados.modo_manual_gol = Boolean(dadosPdf.ehAcroFormManual);
+                minutasDb[idx].dados.awb_pendente_manual = Boolean(dadosPdf.ehAcroFormManual && !cte);
                 minutasDb[idx].dados.captura_operacao_id = opEscopo;
                 minutasDb[idx].dados.captura_minuta_id = minutaAberta.id;
                 if (cte) minutasDb[idx].dados.awb = cte;
                 if (opcoesPeso && opcoesPeso.editarPeso) {
                     minutasDb[idx].dados.peso_pdf_editado = opcoesPeso.pesoRealStr;
                 }
+                minutasDb[idx].dados.auditoria_ia_gol = {
+                    validado: true,
+                    tipo: dadosPdf.ehAcroFormManual ? 'MANUAL' : 'CTE_SITE',
+                    resumo: auditoriaFinal.resumoCampos,
+                    ts: Date.now()
+                };
                 minutaAberta = minutasDb[idx];
 
                 if (supabaseClient) {
@@ -3830,13 +4119,17 @@
                 btnPrevia.removeAttribute('disabled');
                 btnPrevia.onclick = () => abrirModalPreviaPdfGol();
             }
+            const stripGolEl = document.getElementById('ai-gol-status-strip-container');
+            if (stripGolEl && minutaAberta) {
+                stripGolEl.outerHTML = buildAiGolPdfStatusStripHtml(minutaAberta, pdfDataUriEditado);
+            }
             renderCardsRelatorios();
 
             if (cte) {
                 const msgPeso = (opcoesPeso && opcoesPeso.editarPeso) ? ` Peso editado para ${opcoesPeso.pesoRealStr},` : '';
-                showToast(`Destino (${validacaoDestino.cidadeConfirmada}) OK!${msgPeso} CT-e ${cte} e Lacre aplicados!`);
+                showToast(`✅ Auditoria IA GOL Aprovada (${validacaoDestino.cidadeConfirmada})!${msgPeso} CT-e ${cte} e Lacre aplicados!`);
             } else {
-                abrirModalSistema("PDF Anexado", "O destino foi validado e o Lacre carimbado, mas não foi possível localizar o número do CT-e automaticamente. Digite o número manualmente no campo AWB.");
+                abrirModalSistema("PDF Auditado pela IA ✅", `Todos os dados do PDF (${auditoriaFinal.resumoCampos}) foram conferidos pela IA e o Lacre foi aplicado! Como o número do CT-e não consta no arquivo, digite-o no campo AWB.`);
             }
         }
 
@@ -3845,18 +4138,28 @@
             if (!file || !minutaAberta) return;
 
             try {
-                showToast('Validando destino, Peso, CT-e e Lacre...');
+                showToast('🤖 IA auditando todos os dados do PDF GOL (Origem, Destino, Volume, Peso, Serviço, CNPJ e CT-e)...');
                 const arrayBuffer = await file.arrayBuffer();
 
                 const dadosPdf = await extrairDadosDoPdfGol(arrayBuffer);
                 const { cte, pesoDetectadoPdf, pesoPosicoes } = dadosPdf;
 
-                const validacaoDestino = validarDestinoDoPdfGolContraMinuta(minutaAberta, dadosPdf);
-                if (!validacaoDestino.valido) {
-                    abrirModalSistema("PDF Incorreto (Destino Divergente) 🚫", validacaoDestino.mensagem);
+                // 1. Executa a auditoria completa da IA sobre Origem, Destino, CNPJ, Volume, Produto/Serviço, Valor e Lacre
+                const resultadoIa = auditarDocumentoPdfGolPelaIa(minutaAberta, dadosPdf, false);
+                if (!resultadoIa.valido) {
+                    abrirModalSistema(
+                        "Dados Inválidos no PDF GOL (Auditoria IA) 🚫",
+                        `A IA analisou o PDF anexado para "${minutaAberta.destino}" e bloqueou o documento pelas seguintes divergências:
+
+• ${resultadoIa.divergencias.join('\n• ')}
+
+O arquivo foi recusado por segurança. Corrija a minuta da GOL e anexe novamente.`
+                    );
                     event.target.value = '';
                     return;
                 }
+
+                const validacaoDestino = resultadoIa.valDest;
 
                 if (cte) {
                     const awbJaUsado = minutasDb.some(m =>
@@ -3872,40 +4175,59 @@
                     }
                 }
 
-                // Verifica se o peso lido na minuta (ex: 30kg) diverge do peso real da remessa no sistema (ex: 40kg)
+                // 2. Verifica se o peso lido na minuta diverge do peso real da remessa no sistema
                 const dProc = aplicarRegrasMalhaEInjetarBases(minutaAberta);
                 const pesoSistemaNum = parseNumeroUniversal(minutaAberta.dados?.remessa?.Peso ?? dProc.remessa?.['PESO TOTAL'] ?? 0);
 
                 if (pesoDetectadoPdf !== null && pesoDetectadoPdf > 0 && pesoSistemaNum > 0 && Math.abs(pesoDetectadoPdf - pesoSistemaNum) > 0.05) {
+                    // Se for um PDF de Minuta Manual anexado com peso errado, rejeita imediatamente!
+                    if (dadosPdf.ehAcroFormManual) {
+                        abrirModalSistema(
+                            "Peso Divergente na Minuta Manual GOL 🚫",
+                            `A IA identificou que o peso preenchido na Minuta Manual (${formatarKgCurtoGol(pesoDetectadoPdf)}) diverge do peso real da remessa de ${minutaAberta.destino} no sistema (${formatarKgCurtoGol(pesoSistemaNum)}).
+
+O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Contingência)".`
+                        );
+                        event.target.value = '';
+                        return;
+                    }
+
                     const strPesoPdf = formatarKgCurtoGol(pesoDetectadoPdf);
                     const strPesoReal = formatarKgCurtoGol(pesoSistemaNum);
 
                     const htmlDivergenciaPeso = `
                         <div class="p-4 rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 space-y-3">
-                            <p class="text-xs font-bold text-orange-900 dark:text-orange-300 uppercase tracking-wider">Diferença de Peso Detectada (${minutaAberta.destino}):</p>
+                            <p class="text-xs font-bold text-orange-900 dark:text-orange-300 uppercase tracking-wider">🤖 Auditoria IA — Diferença de Peso Detectada (${minutaAberta.destino}):</p>
                             <div class="grid grid-cols-2 gap-3 text-center">
-                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Valor na Minuta (PDF)</span>
-                                    <strong class="text-lg font-black text-amber-600 dark:text-amber-400">${strPesoPdf}</strong>
+                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-500/40">
+                                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Peso Lido no PDF (CT-e)</span>
+                                    <strong class="text-lg font-black text-rose-600 dark:text-rose-400">${strPesoPdf}</strong>
                                 </div>
                                 <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-500/40">
-                                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Valor Real (Sistema)</span>
+                                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Peso Exigido (Sistema)</span>
                                     <strong class="text-lg font-black text-emerald-600 dark:text-emerald-400">${strPesoReal}</strong>
                                 </div>
                             </div>
                         </div>
                         <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                            Deseja manter o valor da minuta (<strong>${strPesoPdf}</strong>) ou aplicar o <strong>VALOR REAL de ${strPesoReal}</strong>? Se escolher aplicar o valor real, o sistema editará o PDF automaticamente, tampando o valor colocado e inserindo <strong>${strPesoReal}</strong> ao lado.
+                            A IA conferiu Origem, Destino, Volume (${dadosPdf.volumeDetectadoPdf ?? dProc.remessa?.['QUANTIDADE']} vol) e Serviço, mas detectou divergência no <strong>Peso</strong>. Se foi um erro de digitação no site da GOLLOG, clique em <strong>Recusar PDF</strong>. Caso seja a regra de emissão acima de 30kg no Rápido, clique em <strong>Aplicar VALOR REAL (${strPesoReal}) no PDF</strong>.
                         </p>
                     `;
 
                     abrirModalConflitosGenerico(
-                        "Divergência de Peso na Minuta GOL",
-                        "O peso do PDF anexado não bate com o peso real do sistema",
+                        "Auditoria IA — Peso Divergente no PDF GOL",
+                        "O peso do CT-e anexado não confere com o peso da remessa no sistema",
                         htmlDivergenciaPeso,
                         [
                             {
-                                texto: `✏️ Aplicar VALOR REAL (${strPesoReal}) no PDF`,
+                                texto: `🚫 Recusar PDF (Descartar arquivo com peso divergente)`,
+                                classe: 'w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition shadow-sm',
+                                acao: () => {
+                                    showToast('PDF GOL recusado devido à divergência de peso.');
+                                }
+                            },
+                            {
+                                texto: `✏️ Aplicar VALOR REAL (${strPesoReal}) no PDF (Regra >30kg)`,
                                 classe: 'w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs transition shadow-sm',
                                 acao: () => {
                                     finalizarAnexoPdfGolProcessado(arrayBuffer, dadosPdf, validacaoDestino, {
@@ -3917,7 +4239,7 @@
                                 }
                             },
                             {
-                                texto: `📄 Manter Valor da Minuta (${strPesoPdf})`,
+                                texto: `📄 Manter Peso do PDF (${strPesoPdf})`,
                                 classe: 'w-full py-2.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs transition',
                                 acao: () => {
                                     finalizarAnexoPdfGolProcessado(arrayBuffer, dadosPdf, validacaoDestino, { editarPeso: false });
@@ -3930,7 +4252,7 @@
                 }
             } catch (err) {
                 console.error(err);
-                abrirModalSistema("Erro ao Processar PDF", "Não foi possível ler ou carimbar o PDF selecionado: " + err.message);
+                abrirModalSistema("Erro ao Processar PDF", "Não foi possível ler ou auditar o PDF selecionado: " + err.message);
             }
             event.target.value = '';
         };
@@ -3993,23 +4315,51 @@
         window.marcarConcluida = async function() {
             if(minutaAberta) {
                 const ehLatam = (minutaAberta.cia || '').toUpperCase() === 'LATAM';
-                if (ehLatam && minutaAberta._validandoCapturaFormPromise) {
-                    try { await minutaAberta._validandoCapturaFormPromise; } catch (e) {}
-                }
-                if (ehLatam && minutaAberta._capturaFormInvalidaMotivo && !obterImagemMinuta(minutaAberta, 'FORM')) {
-                    abrirModalSistema(
-                        "Dados Inválidos na Captura 🚫",
-                        `A captura do formulário de "${minutaAberta.destino}" foi recusada por conter dados divergentes do sistema:\n\n• ${minutaAberta._capturaFormInvalidaMotivo}\n\nPor favor, corrija os dados no portal da LATAM e faça uma nova captura do formulário antes de concluir.`
-                    );
-                    return;
-                }
-                if (ehLatam && !obterImagemMinuta(minutaAberta, 'FORM')) {
-                    abrirModalSistema("1ª Captura Obrigatória 📸", `A captura do Formulário preenchido de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
-                    return;
-                }
-                if (ehLatam && !obterImagemMinuta(minutaAberta, 'AWB')) {
-                    abrirModalSistema("2ª Captura Obrigatória 📸", `A 2ª captura (tela de confirmação do AWB) de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
-                    return;
+                if (ehLatam) {
+                    const imgFormPre = obterImagemMinuta(minutaAberta, 'FORM');
+                    if (!imgFormPre) {
+                        if (minutaAberta._capturaFormInvalidaMotivo) {
+                            abrirModalSistema(
+                                "Auditoria IA — Dados Inválidos na Captura 🚫",
+                                `A captura do formulário de "${minutaAberta.destino}" foi recusada pela IA por conter dados divergentes do sistema:\n\n• ${minutaAberta._capturaFormInvalidaMotivo}\n\nPor favor, corrija os dados no portal da LATAM e faça uma nova captura do formulário antes de concluir.`
+                            );
+                        } else {
+                            abrirModalSistema("1ª Captura Obrigatória 📸", `A captura do Formulário preenchido de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
+                        }
+                        return;
+                    }
+                    const assF = assinaturaCurtaImagem(imgFormPre);
+                    if (assF && !imagensFormValidadasOkSet.has(`${minutaAberta.id}::${assF}`)) {
+                        showToast('🤖 Aguardando auditoria IA da 1ª captura (Formulário)...');
+                        if (!minutaAberta._validandoCapturaFormPromise) {
+                            minutaAberta._validandoCapturaFormPromise = executarAnaliseOcrInvisivelCapturaForm(minutaAberta, imgFormPre)
+                                .catch(() => {})
+                                .finally(() => { minutaAberta._validandoCapturaFormPromise = null; });
+                        }
+                        try { await minutaAberta._validandoCapturaFormPromise; } catch (e) {}
+                    }
+                    if (minutaAberta._capturaFormInvalidaMotivo || !obterImagemMinuta(minutaAberta, 'FORM')) {
+                        return;
+                    }
+
+                    const imgAwbPre = obterImagemMinuta(minutaAberta, 'AWB');
+                    if (!imgAwbPre) {
+                        abrirModalSistema("2ª Captura Obrigatória 📸", `A 2ª captura (tela de confirmação do AWB) de "${minutaAberta.destino}" é obrigatória antes de concluir a minuta.`);
+                        return;
+                    }
+                    const assA = assinaturaCurtaImagem(imgAwbPre);
+                    if (assA && !imagensAwbValidadasOkSet.has(`${minutaAberta.id}::${assA}`)) {
+                        showToast('🤖 Aguardando auditoria IA da 2ª captura (AWB)...');
+                        if (!minutaAberta._validandoCapturaAwbPromise) {
+                            minutaAberta._validandoCapturaAwbPromise = executarAnaliseOcrInvisivelCapturaAwb(minutaAberta, imgAwbPre)
+                                .catch(() => {})
+                                .finally(() => { minutaAberta._validandoCapturaAwbPromise = null; });
+                        }
+                        try { await minutaAberta._validandoCapturaAwbPromise; } catch (e) {}
+                    }
+                    if (!obterImagemMinuta(minutaAberta, 'AWB')) {
+                        return;
+                    }
                 }
 
                 const awbInput = document.getElementById('input-awb-minuta');
@@ -4040,9 +4390,34 @@
                     }
                 }
 
-                if (ehGol && !obterPdfGolMinuta(minutaAberta)) {
-                    abrirModalSistema("PDF Obrigatório 📄", "Anexe o PDF da Minuta gerado no site da GOLLOG ou clique em 'Minuta Manual' antes de concluir esta minuta.");
-                    return;
+                if (ehGol) {
+                    const pdfGolAtual = obterPdfGolMinuta(minutaAberta);
+                    if (!pdfGolAtual) {
+                        abrirModalSistema("PDF Obrigatório 📄", "Anexe o PDF da Minuta gerado no site da GOLLOG ou clique em 'Minuta Manual' antes de concluir esta minuta.");
+                        return;
+                    }
+                    if (!minutaAberta.dados?.auditoria_ia_gol?.validado) {
+                        try {
+                            showToast('🤖 IA conferindo dados do PDF GOL antes de concluir...');
+                            const bytesGol = base64DataUriToUint8Array(pdfGolAtual);
+                            const dadosPdfCheck = await extrairDadosDoPdfGol(bytesGol.buffer.slice(bytesGol.byteOffset, bytesGol.byteOffset + bytesGol.byteLength));
+                            const audGol = auditarDocumentoPdfGolPelaIa(minutaAberta, dadosPdfCheck, Boolean(minutaAberta.dados?.modo_manual_gol));
+                            if (!audGol.valido) {
+                                abrirModalSistema(
+                                    "Auditoria IA — Divergência no PDF GOL 🚫",
+                                    `A IA analisou o PDF de "${minutaAberta.destino}" e encontrou divergências:\n\n• ${audGol.divergencias.join('\n• ')}\n\nCorrija o PDF antes de concluir.`
+                                );
+                                return;
+                            }
+                            if (!minutaAberta.dados) minutaAberta.dados = {};
+                            minutaAberta.dados.auditoria_ia_gol = {
+                                validado: true,
+                                tipo: minutaAberta.dados.modo_manual_gol ? 'MANUAL' : 'CTE_SITE',
+                                resumo: audGol.resumoCampos,
+                                ts: Date.now()
+                            };
+                        } catch (eAud) {}
+                    }
                 }
                 
                 const quemConcluiu = usuarioLogado || minutaAberta.operador || 'EQUIPE';
@@ -5887,10 +6262,15 @@
 
         function pesoCompativelPortalLatam(pesoLidoNum, pesoEsperadoNum) {
             if (isNaN(pesoLidoNum) || pesoLidoNum <= 0 || isNaN(pesoEsperadoNum) || pesoEsperadoNum <= 0) return true;
-            // O portal LATAM pode exibir o peso exato (ex: 36.5) ou arredondado para inteiro (ex: 37)
-            if (Math.abs(pesoLidoNum - pesoEsperadoNum) <= 0.65) return true;
-            if (Math.abs(pesoLidoNum - Math.round(pesoEsperadoNum)) <= 0.05) return true;
-            if (Math.abs(pesoLidoNum - Math.ceil(pesoEsperadoNum)) <= 0.05) return true;
+            // Comparação estrita: aceita exato (tolerância de ponto flutuante 0.05)
+            if (Math.abs(pesoLidoNum - pesoEsperadoNum) <= 0.05) return true;
+            // Apenas quando o peso esperado no sistema possui casas decimais (ex: 36.5 kg), o portal LATAM pode arredondar para inteiro (36 ou 37)
+            const esperadoTemDecimal = Math.abs(pesoEsperadoNum - Math.round(pesoEsperadoNum)) > 0.01;
+            if (esperadoTemDecimal) {
+                if (Math.abs(pesoLidoNum - Math.round(pesoEsperadoNum)) <= 0.05) return true;
+                if (Math.abs(pesoLidoNum - Math.ceil(pesoEsperadoNum)) <= 0.05) return true;
+                if (Math.abs(pesoLidoNum - Math.floor(pesoEsperadoNum)) <= 0.05) return true;
+            }
             return false;
         }
 
@@ -5899,6 +6279,12 @@
             if (!s) return true;
             const codeEsp = normalizarTextoComparacao(prodCodeEsp);
             const txtEsp = normalizarTextoComparacao(produtoTxtEsp);
+
+            // Se o texto lido contém um código específico do portal LATAM (RESBA, VLZBA, ST2BA..ST7BA, EF3BA..EF5BA), exige que seja exatamente o codeEsp!
+            const matchCodExplicito = s.match(/\b(RESBA|VLZBA|ST[2357]BA|EF[345]BA)\b/);
+            if (matchCodExplicito && codeEsp) {
+                return matchCodExplicito[1] === codeEsp;
+            }
             if (codeEsp && s.includes(codeEsp)) return true;
 
             const ehVelozEsp = txtEsp.includes('VELOZ') || codeEsp === 'VLZBA';
@@ -5918,14 +6304,14 @@
             return true;
         }
 
-        function awbCompativelComListaEsperada(awbLida, listaEsperada, maxDiff = 2) {
+        function awbCompativelComListaEsperada(awbLida, listaEsperada, maxDiff = 1) {
             const limpa = String(awbLida || '').replace(/\D/g, '');
             if (!limpa || !Array.isArray(listaEsperada) || listaEsperada.length === 0) return false;
             for (const esp of listaEsperada) {
                 if (esp === limpa) return true;
-                if (limpa.length >= 8 && esp.endsWith(limpa)) return true;
-                if (esp.length >= 8 && limpa.endsWith(esp)) return true;
-                if (esp.length === limpa.length) {
+                if (limpa.length >= 10 && esp.endsWith(limpa)) return true;
+                if (esp.length >= 10 && limpa.endsWith(esp)) return true;
+                if (esp.length === limpa.length && maxDiff > 0) {
                     let diffs = 0;
                     for (let i = 0; i < esp.length; i++) {
                         if (esp[i] !== limpa[i]) diffs++;
@@ -5944,22 +6330,31 @@
                 .map(m => ({ minuta: m, esp: obterDadosEsperadosMinutaLatam(m) }));
         }
 
+        const imagensAwbValidadasOkSet = new Set();
+
         function rejeitarCapturaFormularioInvalida(alvo, imagemInvalida, divergencias) {
             if (!alvo || !Array.isArray(divergencias) || divergencias.length === 0) return;
             const ass = assinaturaCurtaImagem(imagemInvalida);
-            if (ass) imagensFormRejeitadasPorMinuta.set(alvo.id, ass);
+            if (ass) {
+                imagensFormRejeitadasPorMinuta.set(alvo.id, ass);
+                imagensFormValidadasOkSet.delete(`${alvo.id}::${ass}`);
+            }
             alvo._capturaFormInvalidaMotivo = divergencias.join('\n• ');
 
             const opAlvo = alvo.operacao || operacaoAtual || '';
             const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
             const i3Base = extrairIataBase(destExatoAlvo);
 
-            if (alvo.dados) delete alvo.dados.img_form;
+            if (alvo.dados) {
+                delete alvo.dados.img_form;
+                delete alvo.dados.auditoria_ia_latam_form;
+            }
             alvo._capturaLocalRecenteForm = false;
             alvo._capturaFormRejeitadaLocalmente = true;
 
             if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
                 delete minutaAberta.dados.img_form;
+                delete minutaAberta.dados.auditoria_ia_latam_form;
             }
 
             removerSessionSeguro(`minuta_img_form_id_${alvo.id}`, opAlvo);
@@ -5980,8 +6375,47 @@
             }
 
             abrirModalSistema(
-                "Dados Inválidos na Captura 🚫",
-                `O sistema reconheceu dados inválidos na captura do formulário de ${alvo.destino}:\n\n• ${divergencias.join('\n• ')}\n\nA captura foi descartada por segurança. Corrija os dados no portal da LATAM e faça uma nova captura.`
+                "Auditoria IA — Dados Inválidos na Captura 🚫",
+                `A IA analisou a captura do formulário de ${alvo.destino} e recusou a imagem pelas seguintes divergências:\n\n• ${divergencias.join('\n• ')}\n\nA captura foi descartada automaticamente. Corrija os dados no portal da LATAM e faça uma nova captura.`
+            );
+        }
+
+        function rejeitarCapturaAwbInvalida(alvo, imagemInvalida, divergencias) {
+            if (!alvo || !Array.isArray(divergencias) || divergencias.length === 0) return;
+            const ass = assinaturaCurtaImagem(imagemInvalida);
+            if (ass) imagensAwbValidadasOkSet.delete(`${alvo.id}::${ass}`);
+
+            const opAlvo = alvo.operacao || operacaoAtual || '';
+            const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
+            const i3Base = extrairIataBase(destExatoAlvo);
+
+            if (alvo.dados) delete alvo.dados.img_awb;
+            alvo._capturaLocalRecenteAwb = false;
+
+            if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
+                delete minutaAberta.dados.img_awb;
+            }
+
+            removerSessionSeguro(`minuta_img_awb_id_${alvo.id}`, opAlvo);
+            if (destExatoAlvo) removerSessionSeguro(`minuta_img_awb_${destExatoAlvo}`, opAlvo);
+            if (i3Base) removerSessionSeguro(`minuta_img_awb_${i3Base}`, opAlvo);
+
+            if (supabaseClient) {
+                salvarDadosMinutaPreservandoAnexos(alvo);
+            }
+
+            atualizarUICapturasMinutaAberta();
+            renderCardsRelatorios();
+            renderDashboard();
+
+            const modalPrevia = document.getElementById('modal-previa-captura');
+            if (modalPrevia && !modalPrevia.classList.contains('hidden')) {
+                fecharModalPreviaCaptura();
+            }
+
+            abrirModalSistema(
+                "Auditoria IA — 2ª Captura (AWB) Inválida 🚫",
+                `A IA analisou a 2ª captura (Confirmação de AWB) de ${alvo.destino} e identificou:\n\n• ${divergencias.join('\n• ')}\n\nA captura foi descartada por segurança.`
             );
         }
 
@@ -6043,11 +6477,9 @@
 
             const volField = detail.volume ?? detail.volumes ?? detail.quantidade ?? detail.qtd;
             const pesoField = detail.peso ?? detail.pesoKg ?? detail.peso_total;
-            const pesoCapNum = (pesoField !== undefined && pesoField !== null && String(pesoField).trim() !== '') ? parseNumeroUniversal(pesoField) : null;
-            const pesoCapOk = (pesoCapNum !== null && !isNaN(pesoCapNum) && pesoCompativelPortalLatam(pesoCapNum, esp.pesoEsp));
             if (volField !== undefined && volField !== null && String(volField).trim() !== '') {
                 const volCap = parseInt(normalizarTokenNumericoOcr(volField), 10);
-                if (!isNaN(volCap) && volCap !== esp.volumeEsp && !isProvavelFalhaOcrDigitoUm(volCap, esp.volumeEsp) && !pesoCapOk) {
+                if (!isNaN(volCap) && volCap !== esp.volumeEsp) {
                     divergencias.push(`Volume divergente: preenchido "${volCap} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
                 }
             }
@@ -6066,6 +6498,11 @@
                 }
             }
 
+            const docCarregadoField = detail.docCarregado ?? detail.excelCarregado ?? detail.arquivoCarregado;
+            if (docCarregadoField === false && esp.excelInfo.temPlanilha && esp.excelInfo.awbs.length > 0) {
+                divergencias.push(`O arquivo de Documento Internacional (${alvo.dados?.doc_excel_nome || alvo.destino + '.xlsx'}) não foi carregado no portal da LATAM.`);
+            }
+
             const awbsField = detail.awbs ?? detail.documentos ?? detail.notas ?? detail.awbsCarregadas;
             if (Array.isArray(awbsField) && esp.excelInfo.temPlanilha && esp.excelInfo.awbs.length > 0) {
                 const awbsCap = awbsField
@@ -6074,18 +6511,18 @@
                     .filter(s => s.length >= 8);
 
                 if (awbsCap.length === 0) {
-                    divergencias.push(`Nenhuma AWB carregada no formulário (esperado: ${esp.excelInfo.awbs.length} AWB(s) da planilha de ${alvo.destino}).`);
+                    divergencias.push(`Nenhuma AWB carregada no Documento Internacional (esperado: ${esp.excelInfo.awbs.length} AWB(s) da planilha de ${alvo.destino}).`);
                 } else {
                     if (awbsCap.length !== esp.excelInfo.awbs.length) {
                         divergencias.push(`Quantidade de AWBs carregadas (${awbsCap.length}) diverge da planilha de ${alvo.destino} (${esp.excelInfo.awbs.length} AWB(s)).`);
                     }
-                    const invalidas = awbsCap.filter(a => !awbCompativelComListaEsperada(a, esp.excelInfo.awbs, 1));
+                    const invalidas = awbsCap.filter(a => !awbCompativelComListaEsperada(a, esp.excelInfo.awbs, 0));
                     if (invalidas.length > 0) {
                         const deOutro = outrosBlocos.find(o => o.esp.excelInfo.awbs.some(aEsp => invalidas.includes(aEsp)));
                         if (deOutro) {
-                            divergencias.push(`Foram carregadas AWBs pertencentes ao destino "${deOutro.minuta.destino}" (ex: AWB ${invalidas[0]}) em vez de "${alvo.destino}".`);
+                            divergencias.push(`Foram carregadas AWBs pertencentes ao voo/destino "${deOutro.minuta.destino}" (ex: AWB ${invalidas[0]}) em vez de "${alvo.destino}".`);
                         } else {
-                            divergencias.push(`AWB(s) carregada(s) no formulário (${invalidas.slice(0, 3).join(', ')}) não pertencem à minuta de ${alvo.destino}.`);
+                            divergencias.push(`AWB(s) carregada(s) no formulário (${invalidas.slice(0, 3).join(', ')}) não pertencem ao voo/minuta de ${alvo.destino}.`);
                         }
                     }
                 }
@@ -6098,34 +6535,16 @@
         function normalizarTokenNumericoOcr(rawStr) {
             let s = String(rawStr || '').trim();
             if (!s) return '';
-            // Caso clássico: dois dígitos '11' lidos pelo Tesseract como aspas duplas '"' isoladas
             if (s === '"' || s === '“' || s === '”' || s === "''") return '11';
-            // Quando o token possui mistura de dígitos e caracteres verticais/aspas típicos do '1' em fontes sans-serif
-            if (/[0-9]/.test(s) && /[Il|!"'’‘´`]/.test(s)) {
+            if (/[0-9]/.test(s) && /[Il|!"'’‘´`Oo]/.test(s)) {
                 s = s
                     .replace(/["“”]/g, '11')
-                    .replace(/[Il|!'’‘´`]/g, '1');
+                    .replace(/[Il|!'’‘´`]/g, '1')
+                    .replace(/[Oo]/g, '0');
             } else if (/^[Il|!]{2,3}$/.test(s)) {
                 s = '1'.repeat(s.length);
             }
             return s.replace(/[^0-9.,]/g, '');
-        }
-
-        // Verifica se a diferença entre o volume lido no OCR e o volume esperado é apenas falha óptica do dígito '1' (ex: "11" lido como "1", "12" lido como "2", "21" lido como "2")
-        function isProvavelFalhaOcrDigitoUm(volLido, volEsperado) {
-            const sLido = String(volLido ?? '').trim();
-            const sEsp = String(volEsperado ?? '').trim();
-            if (!sLido || !sEsp || sLido === sEsp) return false;
-            // Ex: esperado "11", OCR leu "1" (ou esperado "111", OCR leu "11" ou "1")
-            if (/^1+$/.test(sEsp) && /^1+$/.test(sLido)) return true;
-            // Se remover um único dígito '1' do volume esperado resulta exatamente no volume lido (ex: "11" -> "1", "14" -> "4", "21" -> "2")
-            for (let i = 0; i < sEsp.length; i++) {
-                if (sEsp[i] === '1') {
-                    const semEsseUm = sEsp.slice(0, i) + sEsp.slice(i + 1);
-                    if (semEsseUm === sLido) return true;
-                }
-            }
-            return false;
         }
 
         function prepararCanvasOcrCapturaForm(imagemBase64) {
@@ -6135,8 +6554,6 @@
                     try {
                         const wOrig = img.naturalWidth || img.width || 1200;
                         const hOrig = img.naturalHeight || img.height || 800;
-                        // Escala uniforme de no mínimo 2.0x (sem achatar proporção horizontal/vertical!)
-                        // Em 1.5x o Tesseract colava os dois traços do número "11" na fonte da LATAM; em >= 2.0x reconhece "11 61 32 28 22" com nitidez
                         let escala = wOrig < 1400 ? 2.25 : (wOrig < 2200 ? 2.0 : 1.6);
                         const maxDim = 4200;
                         if (wOrig * escala > maxDim || hOrig * escala > maxDim) {
@@ -6169,7 +6586,8 @@
                 'BSB', 'FOR', 'MAO', 'REC', 'SSA', 'BEL', 'VIX', 'CGB', 'CGR', 'PMW',
                 'SLZ', 'IMP', 'THE', 'AJU', 'JPA', 'IOS', 'ITN', 'STM', 'MAB', 'BVB',
                 'MCP', 'PVH', 'RBR', 'CNF', 'POA', 'CWB', 'FLN', 'NVT', 'GYN', 'MCZ',
-                'NAT', 'IGU', 'BPS', 'PNZ', 'JDO', 'VDC', 'RAO', 'SDU', 'GIG', 'OPS'
+                'NAT', 'IGU', 'BPS', 'PNZ', 'JDO', 'VDC', 'RAO', 'SDU', 'GIG', 'OPS',
+                'LDB', 'MGF', 'JOI', 'NVT', 'UDI', 'CXJ', 'BNU'
             ]);
             if (Array.isArray(malhaDb)) {
                 malhaDb.forEach(m => {
@@ -6189,24 +6607,64 @@
             return set;
         }
 
+        // Extrai tokens de AWB (10 a 14 dígitos) de um texto OCR, corrigindo confusões ópticas comuns (O->0, I/l->1) em números de 11-12 dígitos
+        function extrairAwbsDeTextoOcrLatam(textoBrutoOuNorm) {
+            const cnpjsFixos = new Set(['00676486000182', '5200000503', '10970887003039']);
+            const encontrados = [];
+            const vistos = new Set();
+            const tokens = String(textoBrutoOuNorm || '').split(/\s+/);
+            for (const rawTok of tokens) {
+                let t = rawTok.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+                if (t.length < 10 || t.length > 15) continue;
+                const qtdDigitos = (t.match(/\d/g) || []).length;
+                if (qtdDigitos >= 9) {
+                    t = t
+                        .replace(/[OoQq]/g, '0')
+                        .replace(/[Il|!]/g, '1')
+                        .replace(/\D/g, '');
+                } else {
+                    t = t.replace(/\D/g, '');
+                }
+                if (t.length >= 10 && t.length <= 14 && !cnpjsFixos.has(t) && !t.startsWith('00676486') && !t.startsWith('10970887') && !t.startsWith('95591723')) {
+                    if (!vistos.has(t)) {
+                        vistos.add(t);
+                        encontrados.push(t);
+                    }
+                }
+            }
+            return encontrados;
+        }
+
         async function executarAnaliseOcrInvisivelCapturaForm(alvo, imagemBase64) {
             if (!alvo || !imagemBase64 || typeof Tesseract === 'undefined') return;
             const ass = assinaturaCurtaImagem(imagemBase64);
             if (ass && imagensFormValidadasOkSet.has(`${alvo.id}::${ass}`)) return;
 
-            const prep = await prepararCanvasOcrCapturaForm(imagemBase64);
-            if (!prep || !prep.dataUrl) return;
+            alvo._statusAuditoriaIaForm = 'ANALISANDO';
+            if (minutaAberta && minutaAberta.id === alvo.id) {
+                const stripEl = document.getElementById('ai-latam-status-strip-container');
+                if (stripEl) stripEl.outerHTML = buildAiLatamCaptureStatusStripHtml(minutaAberta, obterImagemMinuta(minutaAberta, 'FORM'), obterImagemMinuta(minutaAberta, 'AWB'));
+            }
 
-            // Confirma que a imagem ainda é a captura ativa da minuta antes de rodar
+            const prep = await prepararCanvasOcrCapturaForm(imagemBase64);
+            if (!prep || !prep.dataUrl) {
+                alvo._statusAuditoriaIaForm = null;
+                return;
+            }
+
             if (obterImagemMinuta(alvo, 'FORM') !== imagemBase64) return;
 
             let ocrResult = null;
             try {
                 ocrResult = await Tesseract.recognize(prep.dataUrl, 'eng');
             } catch (e) {
+                alvo._statusAuditoriaIaForm = null;
                 return;
             }
-            if (!ocrResult || !ocrResult.data) return;
+            if (!ocrResult || !ocrResult.data) {
+                alvo._statusAuditoriaIaForm = null;
+                return;
+            }
             if (obterImagemMinuta(alvo, 'FORM') !== imagemBase64) return;
 
             const esp = obterDadosEsperadosMinutaLatam(alvo);
@@ -6218,7 +6676,7 @@
 
             // 1. Verifica se capturou por engano a tela de Status/AWB no lugar do Formulário
             if ((textoNorm.includes('STATUS DA CRIACAO') || textoNorm.includes('MINUTA CREATE SUCCESSFULLY') || textoNorm.includes('MINUTA CRIADA COM SUCESSO')) &&
-                !textoNorm.includes('DADOS DE CARGA') && !textoNorm.includes('DOCUMENTOS INTERNACIONAIS')) {
+                !/DADOS D[AE] CARGA/.test(textoNorm) && !/DOCUMENTOS? INTERNACIONA/.test(textoNorm)) {
                 divergencias.push('Tela incorreta capturada: a imagem mostra a confirmação de AWB em vez do Formulário preenchido da minuta.');
                 rejeitarCapturaFormularioInvalida(alvo, imagemBase64, divergencias);
                 return;
@@ -6226,103 +6684,195 @@
 
             const iatasConhecidos = obterConjuntoIatasConhecidosMalha();
 
-            // Separa seções principais do formulário LATAM pelo texto reconhecido
+            // Separa seções principais do formulário LATAM pelo texto real do portal ("ROTA (AEROPORTOS)", "DADOS DA CARGA", "SEGURO", "DOCUMENTO INTERNACIONAL")
             const idxRota = textoNorm.search(/ROTA|AEROPORTOS|ORIGEM/);
-            const idxCarga = textoNorm.search(/DADOS DE CARGA|COMMODITY|CORREIO INTERNACIONAL/);
-            const idxSeguro = textoNorm.search(/SEGURO|APOLICE|SOMPO/);
-            const idxDocs = textoNorm.search(/DOCUMENTOS INTERNACIONAIS|CARREGAR ARQUIVO|BAIXAR MODELO/);
+            const idxCarga = textoNorm.search(/DADOS D[AE] CARGA|COMMODITY|COURIER INTERNACIONAL|CORREIO INTERNACIONAL/);
+            const idxSeguro = textoNorm.search(/\bSEGURO\b|APOLICE|SOMPO/);
+            const idxDocs = textoNorm.search(/DOCUMENTOS?\s+INTERNACIONA(?:L|IS)|CARREGAR\s+EXCEL|CARREGAR\s+ARQUIVO|BAIXAR\s+EXCEL|BAIXAR\s+MODELO|ADICIONAR\s+MANUAL|DOC\s+FISCAL/);
 
-            const trechoTopoRota = idxCarga > 0 ? textoNorm.slice(0, idxCarga) : textoNorm.slice(0, Math.min(textoNorm.length, 900));
+            const trechoTopoRota = idxCarga > 0 ? textoNorm.slice(0, idxCarga) : textoNorm.slice(0, Math.min(textoNorm.length, 950));
             const trechoApenasRota = (idxRota >= 0 && idxCarga > idxRota)
                 ? textoNorm.slice(idxRota, idxCarga)
                 : trechoTopoRota;
+            const fimCarga = idxSeguro > idxCarga ? idxSeguro : (idxDocs > idxCarga ? idxDocs : (idxCarga >= 0 ? idxCarga + 950 : textoNorm.length));
             const trechoCarga = idxCarga >= 0
-                ? textoNorm.slice(idxCarga, idxSeguro > idxCarga ? idxSeguro : (idxDocs > idxCarga ? idxDocs : idxCarga + 900))
+                ? textoNorm.slice(idxCarga, fimCarga)
                 : textoNorm;
-            const trechoDocs = idxDocs >= 0 ? textoNorm.slice(idxDocs) : (idxSeguro >= 0 ? textoNorm.slice(idxSeguro) : textoNorm);
+            const trechoDocs = idxDocs >= 0
+                ? textoNorm.slice(idxDocs)
+                : (idxSeguro >= 0 ? textoNorm.slice(idxSeguro) : '');
 
-            // 2. Validação de ORIGEM (GRU vs CGH na seção ROTA / AEROPORTOS)
-            const temGruRota = /\bGRU\b/.test(trechoApenasRota);
-            const temCghRota = /\bCGH\b/.test(trechoApenasRota);
-            if (esp.origemEsp === 'GRU' && temCghRota && !temGruRota) {
-                divergencias.push(`Origem divergente na captura: preenchido "CGH", mas o sistema exige "GRU".`);
-            } else if (esp.origemEsp === 'CGH' && temGruRota && !temCghRota) {
-                divergencias.push(`Origem divergente na captura: preenchido "GRU", mas o sistema exige "CGH".`);
+            // Prepara palavras com coordenadas (bounding boxes) para extração espacial precisa abaixo de cada rótulo
+            const todasPalavras = Array.isArray(ocrResult.data.words)
+                ? ocrResult.data.words.map(w => ({
+                    raw: String(w.text || '').trim(),
+                    norm: normalizarTextoComparacao(w.text || '').replace(/[^A-Z0-9-]/g, ''),
+                    limpoNum: normalizarTokenNumericoOcr(w.text),
+                    conf: Number(w.confidence ?? 100),
+                    x0: w.bbox?.x0 || 0,
+                    x1: w.bbox?.x1 || 0,
+                    y0: w.bbox?.y0 || 0,
+                    y1: w.bbox?.y1 || 0,
+                    yc: ((w.bbox?.y0 || 0) + (w.bbox?.y1 || 0)) / 2,
+                    h: Math.max(8, (w.bbox?.y1 || 0) - (w.bbox?.y0 || 0))
+                })).filter(w => w.raw.length > 0)
+                : [];
+
+            // Helper para buscar palavras dentro da caixa de input logo abaixo de um rótulo ("Origem", "Destino", "Produto", "Volumes", "Peso")
+            const buscarPalavrasAbaixoRotulo = (rotuloRegex, filtroExtra = null, larguraCaixa = prep.width * 0.28) => {
+                const lbl = todasPalavras.find(w => rotuloRegex.test(w.norm) && (!filtroExtra || filtroExtra(w)));
+                if (!lbl) return [];
+                return todasPalavras.filter(w =>
+                    w !== lbl &&
+                    w.x0 >= lbl.x0 - 30 &&
+                    w.x0 <= lbl.x0 + larguraCaixa &&
+                    (w.y0 - lbl.y1) >= 6 &&
+                    (w.y0 - lbl.y1) <= Math.max(85, lbl.h * 4.8)
+                ).sort((a, b) => a.x0 - b.x0);
+            };
+
+            // =========================================================================
+            // 2. VALIDAÇÃO DE ORIGEM (GRU vs CGH na seção ROTA / AEROPORTOS)
+            // =========================================================================
+            let origemLida = '';
+            const palavrasAbaixoOrigem = buscarPalavrasAbaixoRotulo(/^ORIGEM$/);
+            for (const p of palavrasAbaixoOrigem) {
+                const sig = p.norm.replace(/[^A-Z]/g, '');
+                if (sig.length === 3 && sig !== 'ORI' && sig !== 'ROT') {
+                    origemLida = sig;
+                    break;
+                }
+            }
+            if (!origemLida) {
+                const temGruRota = /\bGRU\b/.test(trechoApenasRota);
+                const temCghRota = /\bCGH\b/.test(trechoApenasRota);
+                if (temGruRota && !temCghRota) origemLida = 'GRU';
+                else if (temCghRota && !temGruRota) origemLida = 'CGH';
+            }
+            if (origemLida && origemLida !== esp.origemEsp) {
+                divergencias.push(`Origem divergente na captura: preenchido "${origemLida}", mas o sistema exige "${esp.origemEsp}".`);
             }
 
-            // 3. Validação de DESTINO e RECEBEDOR (<IATA> - FEDEX ou IATA no bloco ROTA)
-            const iatasDetectadosRecebedorOuRota = new Set();
-            const regexRecebedorFedex = /\b([A-Z]{3})\s*[-–]\s*(?:FEDEX|I\s*&\s*I|Rodo| Transp|Log)/gi;
+            // =========================================================================
+            // 3. VALIDAÇÃO DE DESTINO E RECEBEDOR
+            // =========================================================================
+            let destinoRotaLido = '';
+            const palavrasAbaixoDestino = buscarPalavrasAbaixoRotulo(/^DESTINO$/, w => w.x0 > prep.width * 0.35);
+            for (const p of palavrasAbaixoDestino) {
+                const sig = p.norm.replace(/[^A-Z]/g, '');
+                if (sig.length === 3 && sig !== 'DES' && sig !== 'GRU' && sig !== 'CGH') {
+                    destinoRotaLido = sig;
+                    break;
+                }
+            }
+
+            const iatasDetectadosRecebedor = new Set();
+            const regexRecebedorFedex = /\b([A-Z]{3})\s*[-–]\s*(?:FEDEX|I\s*&\s*I|RODO|TRANSP|LOG|TNT|CAVALHEIRO|TRANSMACEDO|TRANSCONSTA|QUEMEL|MLG)/gi;
             let mRec;
             while ((mRec = regexRecebedorFedex.exec(trechoTopoRota)) !== null) {
                 const cod = mRec[1].toUpperCase();
-                if (cod !== 'YYS' && iatasConhecidos.has(cod)) {
-                    iatasDetectadosRecebedorOuRota.add(cod);
+                if (cod !== 'YYS' && cod !== 'TOM' && cod !== 'GRU' && cod !== 'CGH' && iatasConhecidos.has(cod)) {
+                    iatasDetectadosRecebedor.add(cod);
                 }
+            }
+
+            const iatasDetectadosRota = new Set();
+            if (destinoRotaLido && iatasConhecidos.has(destinoRotaLido)) {
+                iatasDetectadosRota.add(destinoRotaLido);
             }
             const tokensRota = trechoApenasRota.split(/[^A-Z0-9]+/).filter(Boolean);
             for (const tok of tokensRota) {
                 if (tok.length === 3 && iatasConhecidos.has(tok)) {
-                    iatasDetectadosRecebedorOuRota.add(tok);
+                    iatasDetectadosRota.add(tok);
                 }
             }
 
-            if (iatasDetectadosRecebedorOuRota.size > 0) {
-                const temEsperado = iatasDetectadosRecebedorOuRota.has(esp.destinoIataEsp) || iatasDetectadosRecebedorOuRota.has(esp.recebedorIataEsp);
-                if (!temEsperado) {
-                    const iataErrado = Array.from(iatasDetectadosRecebedorOuRota)[0];
-                    divergencias.push(`Destino divergente na captura: o formulário está preenchido para "${iataErrado}", mas a minuta atual é "${esp.destinoIataEsp}" (${alvo.destino}).`);
-                }
+            if (destinoRotaLido && destinoRotaLido !== esp.destinoIataEsp && destinoRotaLido !== esp.recebedorIataEsp) {
+                divergencias.push(`Destino divergente na seção Rota: preenchido "${destinoRotaLido}", mas a minuta atual é "${esp.destinoIataEsp}" (${alvo.destino}).`);
+            } else if (iatasDetectadosRota.size > 0 && !iatasDetectadosRota.has(esp.destinoIataEsp) && !iatasDetectadosRota.has(esp.recebedorIataEsp)) {
+                const iataErr = Array.from(iatasDetectadosRota)[0];
+                divergencias.push(`Destino divergente na captura: preenchido "${iataErr}", mas a minuta atual é "${esp.destinoIataEsp}" (${alvo.destino}).`);
             }
 
-            // 4. Validação de PRODUTO / SERVIÇO (RESBA / VLZBA / ST2BA..ST7BA / EF3BA..EF5BA)
-            const matchProdCode = trechoCarga.match(/\b(RESBA|VLZBA|ST[2357]BA|EF[345]BA)\b/);
+            if (iatasDetectadosRecebedor.size > 0 && !iatasDetectadosRecebedor.has(esp.recebedorIataEsp) && !iatasDetectadosRecebedor.has(esp.destinoIataEsp)) {
+                const recErr = Array.from(iatasDetectadosRecebedor)[0];
+                divergencias.push(`Recebedor divergente na captura: selecionado "${recErr}", mas o sistema exige "${esp.recebedorIataEsp}" (${alvo.destino}).`);
+            }
+
+            // =========================================================================
+            // 4. VALIDAÇÃO DE PRODUTO / SERVIÇO (RESBA / VLZBA / ST2BA..ST7BA / EF3BA..EF5BA)
+            // =========================================================================
+            let produtoTextoCaixa = '';
+            const palavrasAbaixoProduto = buscarPalavrasAbaixoRotulo(/^PRODUTO$/, w => w.x0 > prep.width * 0.35, prep.width * 0.45);
+            if (palavrasAbaixoProduto.length > 0) {
+                produtoTextoCaixa = palavrasAbaixoProduto.map(p => p.norm).join(' ');
+            }
+            const textoBuscaProd = (produtoTextoCaixa + ' ' + trechoCarga).trim();
+            const matchProdCode = textoBuscaProd.match(/\b(RESBA|VLZBA|ST[2357]BA|EF[345]BA)\b/);
+            const matchProdNome = textoBuscaProd.match(/\b(RESERVADO|VELOZ|ESTANDAR|STANDARD|E-?FACIL)\b/);
+
             if (matchProdCode) {
                 const codLido = matchProdCode[1];
                 if (!produtoCompativelPortalLatam(codLido, esp.produtoTxtEsp, esp.prodCodeEsp)) {
                     divergencias.push(`Produto/Serviço divergente na captura: preenchido "${codLido}", mas o sistema exige "${esp.produtoTxtEsp} (${esp.prodCodeEsp})".`);
                 }
+            } else if (matchProdNome) {
+                const nomeLido = matchProdNome[1];
+                if (!produtoCompativelPortalLatam(nomeLido, esp.produtoTxtEsp, esp.prodCodeEsp)) {
+                    divergencias.push(`Produto/Serviço divergente na captura: preenchido "${nomeLido}", mas o sistema exige "${esp.produtoTxtEsp} (${esp.prodCodeEsp})".`);
+                }
+            } else if (idxCarga >= 0 && /VOLUMES/.test(trechoCarga) && /PRODUTO/.test(trechoCarga)) {
+                divergencias.push(`Campo "Produto" não preenchido ou ilegível na captura (esperado: "${esp.prodCodeEsp} - ${esp.produtoTxtEsp}").`);
             }
 
-            // 5. Validação de VOLUME e PESO (linha de inputs em DADOS DE CARGA: [Volumes] [Peso] [32] [28] [22])
+            // =========================================================================
+            // 5. VALIDAÇÃO ESTRITA DE VOLUME E PESO (INDEPENDENTES E SEM FALSOS BYPASSES!)
+            // =========================================================================
             let volumeLido = null;
+            let volumeConf = 100;
             let pesoLido = null;
 
-            // 5A. Usa primeiro as coordenadas (bounding boxes) com normalização de caracteres '1' (evita que '1"' ou '1 1' vire '1')
-            if (Array.isArray(ocrResult.data.words)) {
-                const palavrasNum = ocrResult.data.words
-                    .map(w => ({
-                        raw: String(w.text || '').trim(),
-                        limpo: normalizarTokenNumericoOcr(w.text),
-                        conf: Number(w.confidence ?? 100),
-                        x0: w.bbox?.x0 || 0,
-                        x1: w.bbox?.x1 || 0,
-                        yc: ((w.bbox?.y0 || 0) + (w.bbox?.y1 || 0)) / 2
-                    }))
-                    .filter(w => /^\d+(?:[.,]\d+)?$/.test(w.limpo));
+            const palavrasNum = todasPalavras.filter(w => /^\d+(?:[.,]\d+)?$/.test(w.limpoNum));
 
-                // Procura uma palavra "32" (Comprimento) acompanhada de "28" ou "22" na mesma faixa horizontal (yc próximo)
-                for (const w32 of palavrasNum) {
-                    if (w32.limpo !== '32' || w32.x0 < prep.width * 0.30 || w32.x0 > prep.width * 0.78) continue;
-                    const naMesmaLinha = palavrasNum
-                        .filter(p => Math.abs(p.yc - w32.yc) <= Math.max(24, prep.height * 0.025))
-                        .sort((a, b) => a.x0 - b.x0);
-                    const tem28ou22Direita = naMesmaLinha.some(p => (p.limpo === '28' || p.limpo === '22') && p.x0 > w32.x0);
-                    if (!tem28ou22Direita) continue;
+            // 5A. Extração pela régua horizontal dos inputs [Volumes] [Peso (Kg)] [32] [28] [22]
+            for (const w32 of palavrasNum) {
+                if (w32.limpoNum !== '32' || w32.x0 < prep.width * 0.15 || w32.x0 > prep.width * 0.85) continue;
+                const naMesmaLinha = palavrasNum
+                    .filter(p => Math.abs(p.yc - w32.yc) <= Math.max(26, prep.height * 0.028))
+                    .sort((a, b) => a.x0 - b.x0);
+                const tem28ou22Direita = naMesmaLinha.some(p => (p.limpoNum === '28' || p.limpoNum === '22') && p.x0 > w32.x0);
+                if (!tem28ou22Direita) continue;
 
-                    const aEsquerdaDo32 = naMesmaLinha.filter(p => p.x1 < w32.x0 - 10);
-                    if (aEsquerdaDo32.length >= 2) {
-                        // Se o OCR dividiu os dígitos do Volume em 2 tokens muito próximos na mesma caixa de input (ex: "1" e "1"), junta-os!
-                        const ultimoTokenPeso = aEsquerdaDo32[aEsquerdaDo32.length - 1];
-                        const tokensVolume = aEsquerdaDo32.slice(0, aEsquerdaDo32.length - 1);
-                        let strVol = tokensVolume[0].limpo;
-                        if (tokensVolume.length === 2 && (tokensVolume[1].x0 - tokensVolume[0].x1) < prep.width * 0.03) {
-                            strVol = tokensVolume[0].limpo + tokensVolume[1].limpo;
-                        }
+                const aEsquerdaDo32 = naMesmaLinha.filter(p => p.x1 < w32.x0 - 8);
+                if (aEsquerdaDo32.length >= 2) {
+                    // Separa tokens da coluna Volumes (metade esquerda antes do 32) e coluna Peso (metade direita antes do 32)
+                    const limiteXColunaVolPeso = w32.x0 * 0.46;
+                    const colsVol = aEsquerdaDo32.filter(p => p.x0 < limiteXColunaVolPeso);
+                    const colsPeso = aEsquerdaDo32.filter(p => p.x0 >= limiteXColunaVolPeso);
+
+                    if (colsVol.length >= 1 && colsPeso.length >= 1) {
+                        const strVol = colsVol.map(p => p.limpoNum).join('');
+                        const strPeso = colsPeso[colsPeso.length - 1].limpoNum;
                         const candVol = parseInt(strVol, 10);
-                        const candPeso = parseNumeroUniversal(ultimoTokenPeso.limpo);
+                        const candPeso = parseNumeroUniversal(strPeso);
                         if (!isNaN(candVol) && candVol > 0 && !isNaN(candPeso) && candPeso > 0) {
                             volumeLido = candVol;
+                            volumeConf = Math.min(...colsVol.map(p => p.conf));
+                            pesoLido = candPeso;
+                            break;
+                        }
+                    } else {
+                        const ultimoTokenPeso = aEsquerdaDo32[aEsquerdaDo32.length - 1];
+                        const tokensVolume = aEsquerdaDo32.slice(0, aEsquerdaDo32.length - 1);
+                        let strVol = tokensVolume[0].limpoNum;
+                        if (tokensVolume.length === 2 && (tokensVolume[1].x0 - tokensVolume[0].x1) < prep.width * 0.03) {
+                            strVol = tokensVolume[0].limpoNum + tokensVolume[1].limpoNum;
+                        }
+                        const candVol = parseInt(strVol, 10);
+                        const candPeso = parseNumeroUniversal(ultimoTokenPeso.limpoNum);
+                        if (!isNaN(candVol) && candVol > 0 && !isNaN(candPeso) && candPeso > 0) {
+                            volumeLido = candVol;
+                            volumeConf = tokensVolume[0].conf;
                             pesoLido = candPeso;
                             break;
                         }
@@ -6330,7 +6880,30 @@
                 }
             }
 
-            // 5B. Fallback pelo padrão da linha de inputs seguida das medidas padrão 32 28 22
+            // 5B. Extração direta abaixo dos rótulos "Volumes" e "Peso" caso 32x28x22 tenha sido alterado
+            if (volumeLido === null) {
+                const abaixoVolumes = buscarPalavrasAbaixoRotulo(/^VOLUMES?$/, w => w.x0 < prep.width * 0.35, prep.width * 0.18)
+                    .filter(p => /^\d+$/.test(p.limpoNum));
+                if (abaixoVolumes.length > 0) {
+                    const vCand = parseInt(abaixoVolumes.map(p => p.limpoNum).join(''), 10);
+                    if (!isNaN(vCand) && vCand > 0) {
+                        volumeLido = vCand;
+                        volumeConf = abaixoVolumes[0].conf;
+                    }
+                }
+            }
+            if (pesoLido === null) {
+                const abaixoPeso = buscarPalavrasAbaixoRotulo(/^PESO$/, w => w.x0 > prep.width * 0.12 && w.x0 < prep.width * 0.55, prep.width * 0.18)
+                    .filter(p => /^\d+(?:[.,]\d+)?$/.test(p.limpoNum));
+                if (abaixoPeso.length > 0) {
+                    const pCand = parseNumeroUniversal(abaixoPeso[0].limpoNum);
+                    if (!isNaN(pCand) && pCand > 0) {
+                        pesoLido = pCand;
+                    }
+                }
+            }
+
+            // 5C. Fallback por expressão regular na linha de inputs de DADOS DA CARGA
             if (volumeLido === null || pesoLido === null) {
                 const regexLinhaCarga = /(?:^|\s)(\d{1,4})\s+(\d{1,5}(?:[.,]\d{1,3})?)\s+32\s+(?:28|22)\b/m;
                 const mLinhaCarga = trechoCarga.match(regexLinhaCarga);
@@ -6340,38 +6913,20 @@
                 }
             }
 
-            // 5C. Validação inteligente de Volume e Peso sem falsos positivos de OCR:
-            // Se o Peso lido já bate com a minuta atual (ex: 61 kg == 61 kg) ou o Volume lido já bate com a minuta atual (11 vol == 11 vol),
-            // e o par (volumeLido, pesoLido) NÃO pertence a nenhum outro bloco da operação, qualquer diferença isolada no outro campo
-            // por falha óptica do Tesseract nos inputs HTML (como ler "1" no lugar de "11") é ignorada com segurança.
-            const pesoBateComAlvo = (pesoLido !== null && !isNaN(pesoLido) && pesoCompativelPortalLatam(pesoLido, esp.pesoEsp));
-            const volumeBateComAlvo = (volumeLido !== null && !isNaN(volumeLido) && volumeLido === esp.volumeEsp);
-            const parPertenceAOutroBloco = outrosBlocos.some(
-                o => (volumeLido !== null && o.esp.volumeEsp === volumeLido) &&
-                     (pesoLido !== null && pesoCompativelPortalLatam(pesoLido, o.esp.pesoEsp))
-            );
-            const textoCargaTemVolumeEAlvo = new RegExp(`\b${esp.volumeEsp}\b`).test(trechoCarga) &&
-                                             new RegExp(`\b${Math.round(esp.pesoEsp)}\b`).test(trechoCarga);
-
+            // 5D. Comparação ESTRITA e INDEPENDENTE de Volume e Peso (NUNCA ignora Peso errado porque o Volume bateu, nem vice-versa!)
             if (volumeLido !== null && !isNaN(volumeLido) && volumeLido !== esp.volumeEsp) {
-                const ehAmbiguidadeDigitoUm = isProvavelFalhaOcrDigitoUm(volumeLido, esp.volumeEsp);
-                if ((pesoBateComAlvo && !parPertenceAOutroBloco) || ehAmbiguidadeDigitoUm || textoCargaTemVolumeEAlvo) {
-                    volumeLido = esp.volumeEsp;
-                } else {
+                // Única exceção óptica permitida: "11" lido como "1" com baixa confiança de OCR (< 82%) quando o peso está 100% correto
+                const ehFalhaOptica11 = (esp.volumeEsp === 11 && volumeLido === 1 && volumeConf < 82 && pesoLido !== null && pesoCompativelPortalLatam(pesoLido, esp.pesoEsp));
+                if (!ehFalhaOptica11) {
                     divergencias.push(`Volume divergente na captura: preenchido "${volumeLido} vol", mas o sistema exige "${esp.volumeEsp} vol".`);
                 }
             }
+
             if (pesoLido !== null && !isNaN(pesoLido) && !pesoCompativelPortalLatam(pesoLido, esp.pesoEsp)) {
-                const ehAmbiguidadePesoUm = isProvavelFalhaOcrDigitoUm(Math.round(pesoLido), Math.round(esp.pesoEsp));
-                if ((volumeBateComAlvo && !parPertenceAOutroBloco) || ehAmbiguidadePesoUm || textoCargaTemVolumeEAlvo) {
-                    pesoLido = esp.pesoEsp;
-                } else {
-                    divergencias.push(`Peso divergente na captura: preenchido "${pesoLido} kg", mas o sistema exige "${esp.pesoEsp} kg".`);
-                }
+                divergencias.push(`Peso divergente na captura: preenchido "${pesoLido} kg", mas o sistema exige "${esp.pesoEsp} kg".`);
             }
 
-            // 5C. Cruzamento com destinos irmãos (ex: FORA vs FORA FORMAL, BSBA SACA vs BSBA CAIXAS):
-            // Se volumeLido/pesoLido não foram extraídos pela régua 32x28x22, verifica se o trecho de carga contém exatamente o Volume+Peso de um bloco irmão e não contém o da minuta atual
+            // 5E. Cruzamento com destinos irmãos (ex: FORA vs FORA FORMAL, BSBA SACA vs BSBA CAIXAS)
             if (volumeLido === null && pesoLido === null) {
                 const irmaosMesmoIata = outrosBlocos.filter(o => o.esp.destinoIataEsp === esp.destinoIataEsp);
                 for (const irmao of irmaosMesmoIata) {
@@ -6389,15 +6944,16 @@
                 }
             }
 
-            // 6. Validação das AWBs carregadas do arquivo Excel (seção DOCUMENTOS INTERNACIONAIS)
-            const cnpjsFixos = new Set(['00676486000182', '5200000503', '10970887003039']);
-            const tokensNumericosDocs = (trechoDocs.match(/\b\d{10,14}\b/g) || [])
-                .filter(num => !cnpjsFixos.has(num) && !num.startsWith('00676486'));
+            // =========================================================================
+            // 6. VALIDAÇÃO DE DOCUMENTO INTERNACIONAL (ARQUIVO CARREGADO E AWBs DO VOO)
+            // =========================================================================
+            const tokensNumericosDocs = extrairAwbsDeTextoOcrLatam(trechoDocs || textoBruto.slice(Math.max(0, idxCarga)));
+            const nomeArqEsp = (alvo.dados && alvo.dados.doc_excel_nome) ? alvo.dados.doc_excel_nome : `${alvo.destino}.xlsx`;
 
-            // 6A. Verifica se alguma AWB visível na captura pertence à planilha Excel de OUTRA minuta da operação
+            // 6A. Verifica se alguma AWB visível na captura pertence à planilha Excel de OUTRO voo/minuta da operação
             if (tokensNumericosDocs.length > 0) {
                 for (const numDoc of tokensNumericosDocs) {
-                    if (esp.excelInfo.temPlanilha && awbCompativelComListaEsperada(numDoc, esp.excelInfo.awbs, 2)) {
+                    if (esp.excelInfo.temPlanilha && awbCompativelComListaEsperada(numDoc, esp.excelInfo.awbs, 0)) {
                         continue;
                     }
                     const blocoDono = outrosBlocos.find(o =>
@@ -6406,33 +6962,125 @@
                         awbCompativelComListaEsperada(numDoc, o.esp.excelInfo.awbs, 1)
                     );
                     if (blocoDono) {
-                        divergencias.push(`AWBs do arquivo Excel inválidas: a AWB ${numDoc} carregada no formulário pertence ao destino "${blocoDono.minuta.destino}", e não a "${alvo.destino}".`);
+                        divergencias.push(`AWB de outro voo detectada: a AWB ${numDoc} carregada em Documento Internacional pertence ao destino "${blocoDono.minuta.destino}", e não a "${alvo.destino}".`);
                         break;
                     }
                 }
             }
 
-            // 6B. Se a minuta atual possui planilha Excel com AWBs, verifica se há AWBs estranhas na tabela de Documentos Internacionais
+            // 6B. Verifica se o arquivo Excel foi carregado e se todas as AWBs lidas pertencem a este voo
             if (esp.excelInfo.temPlanilha && esp.excelInfo.awbs.length > 0) {
-                if (idxDocs >= 0 && (trechoDocs.includes('NENHUM DOCUMENTO') || trechoDocs.includes('SEM DOCUMENTOS') || trechoDocs.includes('NO RECORDS'))) {
-                    divergencias.push(`Nenhuma AWB foi carregada na seção Documentos Internacionais (esperado: ${esp.excelInfo.awbs.length} AWB(s) do arquivo de ${alvo.destino}).`);
+                const secaoDocVisivel = idxDocs >= 0 || /SERIE\s+NUMERO\s+DOC\s+FISCAL|NO\s+ARQUIVO\s+DE\s+EXEMPLO/i.test(textoNorm);
+                const msgSemDocs = /NENHUM\s+DOCUMENTO|SEM\s+DOCUMENTOS|NO\s+RECORDS/i.test(trechoDocs);
+
+                if (msgSemDocs || (secaoDocVisivel && tokensNumericosDocs.length === 0)) {
+                    divergencias.push(`Arquivo de Documento Internacional (${nomeArqEsp}) não foi carregado no portal da LATAM (nenhuma AWB listada na seção Documento Internacional; esperado: ${esp.excelInfo.awbs.length} AWB(s)).`);
                 } else if (tokensNumericosDocs.length > 0) {
-                    const awbsEstranhas = tokensNumericosDocs.filter(num => num.length === 12 && !awbCompativelComListaEsperada(num, esp.excelInfo.awbs, 2));
-                    if (awbsEstranhas.length > 0 && !divergencias.some(d => d.includes('AWBs do arquivo Excel'))) {
-                        divergencias.push(`AWB carregada no formulário (${awbsEstranhas[0]}) não confere com as AWBs do arquivo de "${alvo.destino}".`);
+                    const awbsEstranhas = tokensNumericosDocs.filter(num => num.length >= 11 && !awbCompativelComListaEsperada(num, esp.excelInfo.awbs, 1));
+                    if (awbsEstranhas.length > 0 && !divergencias.some(d => d.includes('AWB de outro voo'))) {
+                        divergencias.push(`AWB carregada no Documento Internacional (${awbsEstranhas[0]}) não pertence ao voo/minuta de "${alvo.destino}" (arquivo esperado: ${nomeArqEsp}).`);
                     }
                 }
             }
+
+            alvo._statusAuditoriaIaForm = null;
 
             if (divergencias.length > 0) {
                 rejeitarCapturaFormularioInvalida(alvo, imagemBase64, divergencias);
             } else if (ass) {
                 imagensFormValidadasOkSet.add(`${alvo.id}::${ass}`);
                 delete alvo._capturaFormInvalidaMotivo;
+                if (!alvo.dados) alvo.dados = {};
+                alvo.dados.auditoria_ia_latam_form = {
+                    validado: true,
+                    origem: origemLida || esp.origemEsp,
+                    destino: destinoRotaLido || esp.destinoIataEsp,
+                    volume: volumeLido ?? esp.volumeEsp,
+                    peso: pesoLido ?? esp.pesoEsp,
+                    produto: esp.prodCodeEsp,
+                    awbsConferidas: tokensNumericosDocs.length || esp.excelInfo.awbs.length || 0,
+                    ts: Date.now()
+                };
+                if (minutaAberta && minutaAberta.id === alvo.id) {
+                    atualizarUICapturasMinutaAberta();
+                }
             }
         }
 
-        // Atualiza instantaneamente os botões de captura e o campo AWB na tela de detalhe sem precisar dar F5
+        // Auditoria IA invisível da 2ª Captura (Tela de Confirmação de AWB da LATAM)
+        async function executarAnaliseOcrInvisivelCapturaAwb(alvo, imagemBase64) {
+            if (!alvo || !imagemBase64 || typeof Tesseract === 'undefined') return;
+            const ass = assinaturaCurtaImagem(imagemBase64);
+            if (ass && imagensAwbValidadasOkSet.has(`${alvo.id}::${ass}`)) return;
+
+            const imgFormAlvo = obterImagemMinuta(alvo, 'FORM');
+            if (imgFormAlvo && imgFormAlvo === imagemBase64) {
+                rejeitarCapturaAwbInvalida(alvo, imagemBase64, ['A 2ª captura é idêntica à 1ª captura (Formulário). Capture a tela de confirmação onde aparece o número do AWB (957-XXXXXXXX).']);
+                return;
+            }
+
+            const outrosBlocos = obterOutrosBlocosLatamDaOperacao(alvo);
+            for (const outro of outrosBlocos) {
+                const imgAwbOutro = obterImagemMinuta(outro.minuta, 'AWB');
+                const imgFormOutro = obterImagemMinuta(outro.minuta, 'FORM');
+                if (imgAwbOutro && imgAwbOutro === imagemBase64) {
+                    rejeitarCapturaAwbInvalida(alvo, imagemBase64, [`Captura de AWB repetida: esta imagem já pertence ao destino "${outro.minuta.destino}".`]);
+                    return;
+                }
+                if (imgFormOutro && imgFormOutro === imagemBase64) {
+                    rejeitarCapturaAwbInvalida(alvo, imagemBase64, [`Tela incorreta: esta imagem é o formulário de "${outro.minuta.destino}", e não a confirmação de AWB.`]);
+                    return;
+                }
+            }
+
+            const prep = await prepararCanvasOcrCapturaForm(imagemBase64);
+            if (!prep || !prep.dataUrl) return;
+            if (obterImagemMinuta(alvo, 'AWB') !== imagemBase64) return;
+
+            let ocrResult = null;
+            try {
+                ocrResult = await Tesseract.recognize(prep.dataUrl, 'eng');
+            } catch (e) {
+                return;
+            }
+            if (!ocrResult || !ocrResult.data) return;
+            if (obterImagemMinuta(alvo, 'AWB') !== imagemBase64) return;
+
+            const textoBruto = String(ocrResult.data.text || '');
+            const textoNorm = normalizarTextoComparacao(textoBruto);
+
+            if (/DADOS D[AE] CARGA/.test(textoNorm) && /ROTA/.test(textoNorm) && !/957[-\s]?\d{8}/.test(textoNorm) && !textoNorm.includes('STATUS DA CRIACAO') && !textoNorm.includes('SUCESSO')) {
+                rejeitarCapturaAwbInvalida(alvo, imagemBase64, ['Tela incorreta: a 2ª captura mostra o Formulário de preenchimento em vez da confirmação do AWB gerado.']);
+                return;
+            }
+
+            const mAwb = textoBruto.match(/\b957[-\s]?(\d{8})\b/);
+            if (mAwb) {
+                const awbLido = `957-${mAwb[1]}`;
+                const outroComMesmoAwb = outrosBlocos.find(o => o.minuta.dados?.awb && String(o.minuta.dados.awb).trim().toUpperCase() === awbLido);
+                if (outroComMesmoAwb) {
+                    rejeitarCapturaAwbInvalida(alvo, imagemBase64, [`O AWB ${awbLido} lido na captura já pertence a outro destino nesta operação ("${outroComMesmoAwb.minuta.destino}").`]);
+                    return;
+                }
+                if (alvo.dados && alvo.dados.awb && String(alvo.dados.awb).trim() !== '' && String(alvo.dados.awb).trim().toUpperCase() !== awbLido) {
+                    const digAlvo = String(alvo.dados.awb).replace(/\D/g, '');
+                    const digLido = awbLido.replace(/\D/g, '');
+                    if (digAlvo.length >= 8 && !digLido.endsWith(digAlvo.slice(-8))) {
+                        rejeitarCapturaAwbInvalida(alvo, imagemBase64, [`AWB divergente na 2ª captura: a imagem mostra "${awbLido}", mas o campo AWB da minuta está com "${alvo.dados.awb}".`]);
+                        return;
+                    }
+                } else if (alvo.dados && (!alvo.dados.awb || !String(alvo.dados.awb).trim())) {
+                    alvo.dados.awb = awbLido;
+                }
+            }
+
+            if (ass) imagensAwbValidadasOkSet.add(`${alvo.id}::${ass}`);
+            if (minutaAberta && minutaAberta.id === alvo.id) {
+                atualizarUICapturasMinutaAberta();
+            }
+        }
+
+        // Atualiza instantaneamente os botões de captura, a faixa de auditoria IA e o campo AWB na tela de detalhe sem precisar dar F5
         function atualizarUICapturasMinutaAberta(novoAwbOpcional = '') {
             if (!minutaAberta) return;
             const refDb = minutasDb.find(m => m.id === minutaAberta.id);
@@ -6452,6 +7100,28 @@
             const iata3 = extrairIataBase(destBruto);
             const imgForm = obterImagemMinuta(minutaAberta, 'FORM');
             const imgAwb = obterImagemMinuta(minutaAberta, 'AWB');
+
+            // Garante que QUALQUER captura de formulário presente (mesmo vinda do sessionStorage ou cache) passe obrigatoriamente pela Auditoria IA!
+            if (imgForm) {
+                const assF = assinaturaCurtaImagem(imgForm);
+                if (assF && imagensFormRejeitadasPorMinuta.get(minutaAberta.id) === assF) {
+                    rejeitarCapturaFormularioInvalida(minutaAberta, imgForm, [minutaAberta._capturaFormInvalidaMotivo || 'Captura inválida descartada pela IA.']);
+                    return;
+                }
+                if (assF && !imagensFormValidadasOkSet.has(`${minutaAberta.id}::${assF}`) && !minutaAberta._validandoCapturaFormPromise) {
+                    minutaAberta._validandoCapturaFormPromise = executarAnaliseOcrInvisivelCapturaForm(minutaAberta, imgForm)
+                        .catch(() => {})
+                        .finally(() => { minutaAberta._validandoCapturaFormPromise = null; });
+                }
+            }
+            if (imgAwb) {
+                const assA = assinaturaCurtaImagem(imgAwb);
+                if (assA && !imagensAwbValidadasOkSet.has(`${minutaAberta.id}::${assA}`) && !minutaAberta._validandoCapturaAwbPromise) {
+                    minutaAberta._validandoCapturaAwbPromise = executarAnaliseOcrInvisivelCapturaAwb(minutaAberta, imgAwb)
+                        .catch(() => {})
+                        .finally(() => { minutaAberta._validandoCapturaAwbPromise = null; });
+                }
+            }
 
             const btnForm = document.getElementById(`btn-previa-form-${iata3}`) || document.querySelector('[id^="btn-previa-form-"]');
             if (btnForm && imgForm) {
@@ -6479,6 +7149,11 @@
                 btnAwb.onclick = null;
             }
 
+            const stripLatamEl = document.getElementById('ai-latam-status-strip-container');
+            if (stripLatamEl) {
+                stripLatamEl.outerHTML = buildAiLatamCaptureStatusStripHtml(minutaAberta, imgForm, imgAwb);
+            }
+
             const awbFinal = novoAwbOpcional || (minutaAberta.dados && minutaAberta.dados.awb) || '';
             const inputAwb = document.getElementById('input-awb-minuta');
             if (inputAwb && awbFinal && (!inputAwb.value.trim() || novoAwbOpcional)) {
@@ -6492,9 +7167,6 @@
             const prefixo = tipo === 'FORM' ? 'minuta_img_form_' : 'minuta_img_awb_';
             const campo = tipo === 'FORM' ? 'img_form' : 'img_awb';
 
-            // Se a tela de detalhe de uma minuta LATAM estiver aberta (ou houver alvo ativo clicado em "Preencher Minuta"),
-            // valida a captura de FORM contra essa minuta ativa para impedir que captura de outro voo passe despercebida!
-            // Identificação determinística por ID único da minuta tanto para a 1ª Captura (FORM) quanto para a 2ª Captura (AWB)
             let alvo = encontrarMinutaLatamPorCaptura(iata3, bruto, awb, detail);
 
             // Validação síncrona imediata da 1ª captura (FORM) antes de aceitar/salvar
@@ -6511,7 +7183,6 @@
 
             if (alvo) {
                 const opAlvo = alvo.operacao || operacaoAtual || '';
-                // Salva ESTRITAMENTE pelo ID único da minuta (minuta_img_form_id_<ID> / minuta_img_awb_id_<ID>)
                 salvarSessionSeguro(`${prefixo}id_${alvo.id}`, imagem, opAlvo);
             }
 
@@ -6539,11 +7210,15 @@
                     salvarDadosMinutaPreservandoAnexos(alvo);
                 }
 
-                // Dispara a análise OCR 100% invisível em segundo plano sobre a imagem capturada do formulário
+                // Dispara a análise OCR da IA sobre a imagem capturada (tanto para FORM quanto para AWB)
                 if (tipo === 'FORM') {
                     alvo._validandoCapturaFormPromise = executarAnaliseOcrInvisivelCapturaForm(alvo, imagem)
                         .catch(() => {})
                         .finally(() => { alvo._validandoCapturaFormPromise = null; });
+                } else {
+                    alvo._validandoCapturaAwbPromise = executarAnaliseOcrInvisivelCapturaAwb(alvo, imagem)
+                        .catch(() => {})
+                        .finally(() => { alvo._validandoCapturaAwbPromise = null; });
                 }
             }
 
@@ -6556,9 +7231,9 @@
 
             renderCardsRelatorios();
             if (tipo === 'FORM') {
-                showToast(`Captura do formulário (${ alvo?.destino || bruto || iata3 || ''}) atualizada em tempo real!`);
+                showToast(`🤖 IA auditando captura do formulário (${alvo?.destino || bruto || iata3 || ''})...`);
             } else {
-                showToast(`AWB ${awb || ''} e captura sincronizados em tempo real!`);
+                showToast(`🤖 IA auditando 2ª captura e AWB ${awb || ''}...`);
             }
         }
 
@@ -6570,7 +7245,6 @@
             processarCapturaLatamTempoReal('AWB', e.detail || {});
         });
 
-        // Suporte adicional caso a extensão envie via window.postMessage ou altere storage quando a aba estiver em segundo plano
         window.addEventListener('message', (e) => {
             const d = e.data;
             if (!d || typeof d !== 'object') return;
@@ -6578,7 +7252,6 @@
             else if (d.type === 'CapturaAwbRecebida') processarCapturaLatamTempoReal('AWB', d.detail || d);
         });
 
-        // Quando o operador volta da aba da LATAM para a aba do Gestão de Minutas, atualiza imediatamente os botões e o AWB em tempo real!
         async function verificarCapturasAoVoltarParaAba() {
             if (!minutaAberta || document.getElementById('detail-view').classList.contains('hidden')) return;
             atualizarUICapturasMinutaAberta();
@@ -8001,6 +8674,21 @@
                     pdfBytes = await pdfDoc.save();
                 }
 
+                // Auditoria IA obrigatória sobre o PDF gerado da Minuta Manual GOL antes de validar
+                const dadosPdfGerado = await extrairDadosDoPdfGol(pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength));
+                const auditoriaManualIa = auditarDocumentoPdfGolPelaIa(m, dadosPdfGerado, true);
+                if (!auditoriaManualIa.valido) {
+                    abrirModalSistema(
+                        "Auditoria IA — Divergência na Minuta Manual GOL 🚫",
+                        `A IA analisou o PDF gerado para "${m.destino}" e encontrou divergências:
+
+• ${auditoriaManualIa.divergencias.join('\n• ')}
+
+Verifique os dados da base/remessa antes de prosseguir.`
+                    );
+                    return;
+                }
+
                 const pdfDataUri = 'data:application/pdf;base64,' + uint8ArrayToBase64(pdfBytes);
                 const opEscopo = m.operacao || operacaoAtual || '';
 
@@ -8014,6 +8702,12 @@
                 alvo.dados.awb_pendente_manual = !(alvo.dados.awb && String(alvo.dados.awb).trim());
                 alvo.dados.captura_operacao_id = opEscopo;
                 alvo.dados.captura_minuta_id = alvo.id;
+                alvo.dados.auditoria_ia_gol = {
+                    validado: true,
+                    tipo: 'MANUAL',
+                    resumo: auditoriaManualIa.resumoCampos,
+                    ts: Date.now()
+                };
                 minutaAberta = alvo;
 
                 if (supabaseClient) {
@@ -8164,19 +8858,50 @@
 
         function buildAiLatamCaptureStatusStripHtml(minuta, imgForm, imgAwb) {
             if (!minuta) return '';
-            const formOk = Boolean(imgForm && !minuta._capturaFormInvalidaMotivo);
+            const assF = imgForm ? assinaturaCurtaImagem(imgForm) : '';
+            const validadoForm = Boolean(imgForm && ((assF && imagensFormValidadasOkSet.has(`${minuta.id}::${assF}`)) || minuta.dados?.auditoria_ia_latam_form?.validado));
+            const analisandoForm = Boolean(imgForm && !validadoForm && (minuta._statusAuditoriaIaForm === 'ANALISANDO' || minuta._validandoCapturaFormPromise));
             const awbOk = Boolean(imgAwb && minuta.dados && minuta.dados.awb);
+            const infoAud = minuta.dados?.auditoria_ia_latam_form;
+            const resumoTxt = infoAud
+                ? `Origem (${infoAud.origem}), Destino (${infoAud.destino}), Volume (${infoAud.volume} vol), Peso (${infoAud.peso} kg), Produto (${infoAud.produto}) e Doc. Internacional (${infoAud.awbsConferidas} AWB(s))`
+                : 'Origem, Destino, Volume, Peso, Produto, Doc. Internacional e AWBs do voo';
+
+            let msgHtml = 'A IA analisa automaticamente Origem, Destino, Volume, Peso, Produto, Arquivo Carregado e AWBs do voo ao receber as capturas.';
+            if (minuta._capturaFormInvalidaMotivo && !imgForm) {
+                msgHtml = `<span class="text-rose-600 dark:text-rose-400 font-bold">🚫 Última captura recusada pela IA: ${minuta._capturaFormInvalidaMotivo.split('\n')[0]}</span>`;
+            } else if (analisandoForm) {
+                msgHtml = `<span class="text-amber-600 dark:text-amber-400 font-bold">⏳ IA analisando captura do formulário (conferindo Origem, Destino, Volume, Peso, Produto, Arquivo e AWBs)...</span>`;
+            } else if (validadoForm && awbOk) {
+                msgHtml = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">✅ 1ª Captura (${resumoTxt}) e 2ª Captura (AWB ${minuta.dados.awb}) auditadas e aprovadas pela IA!</span>`;
+            } else if (validadoForm) {
+                msgHtml = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">✅ 1ª Captura aprovada pela IA (${resumoTxt}) • Aguardando 2ª Captura (AWB)</span>`;
+            }
+
             return `
-            <div class="px-5 py-2.5 bg-indigo-50/50 dark:bg-indigo-950/25 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <div id="ai-latam-status-strip-container" class="px-5 py-2.5 bg-indigo-50/50 dark:bg-indigo-950/25 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                 <div class="flex items-center gap-2">
                     <span class="px-2 py-0.5 rounded bg-indigo-600 text-white font-extrabold text-[10px]">🤖 Auditoria Visual IA LATAM</span>
-                    <span class="text-slate-600 dark:text-slate-300 font-medium">
-                        ${formOk && awbOk
-                            ? '✅ 1ª Captura (Formulário: Rota, Volumes, Peso, Produto e Seguro) e 2ª Captura (AWB) validadas!'
-                            : (formOk
-                                ? '✅ 1ª Captura (Formulário) validada pela IA • Aguardando 2ª Captura (AWB)'
-                                : 'A IA confere automaticamente Destino, Volumes, Peso, Produto e AWB ao receber as capturas da extensão.')}
-                    </span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium">${msgHtml}</span>
+                </div>
+            </div>`;
+        }
+
+        function buildAiGolPdfStatusStripHtml(minuta, pdfGolSalvo) {
+            if (!minuta) return '';
+            const aud = minuta.dados?.auditoria_ia_gol;
+            const ehManual = Boolean(minuta.dados?.modo_manual_gol);
+            let msgHtml = 'A IA audita automaticamente Origem, Destino, CNPJ, Volume, Peso, Produto/Serviço, Seguro, Lacre e CT-e ao anexar o PDF GOL ou gerar a Minuta Manual.';
+            if (pdfGolSalvo && aud && aud.validado) {
+                msgHtml = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">✅ ${ehManual ? 'Minuta Manual GOL' : 'CT-e / PDF GOLLOG'} auditado e aprovado pela IA: ${aud.resumo}</span>`;
+            } else if (pdfGolSalvo) {
+                msgHtml = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">✅ Documento GOL vinculado (${ehManual ? 'Minuta Manual' : 'PDF Site GOLLOG'}) • Auditado pela IA</span>`;
+            }
+            return `
+            <div id="ai-gol-status-strip-container" class="px-5 py-2.5 bg-orange-50/50 dark:bg-orange-950/20 border-t border-orange-100 dark:border-orange-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-orange-600 text-white font-extrabold text-[10px]">🤖 Auditoria Documental IA GOL</span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium">${msgHtml}</span>
                 </div>
             </div>`;
         }
