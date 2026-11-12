@@ -2,9 +2,16 @@
 <html lang="pt-BR" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a" id="meta-theme-color">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Gestão de Minutas">
     <title>Sistema Aéreo - Gestão de Minutas</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%234f46e5'/%3E%3Cpath d='M8 26h20M10.5 19.5L26 13l-2-3.5-6.5 2L12 8l-2 1 3.5 5-4.5 2-2-1.5-1.5.8 3 4.2z' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%234f46e5'/%3E%3Cpath d='M42 138h108M56 104L138 70l-10-18-35 11-29-21-11 5 18 27-24 11-11-8-8 4 16 23z' stroke='white' stroke-width='12' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+    <link rel="manifest" href='data:application/manifest+json,{"name":"Sistema A%C3%A9reo - Gest%C3%A3o de Minutas","short_name":"Minutas FedEx","display":"standalone","background_color":"#0f172a","theme_color":"#4f46e5","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 192 192%27%3E%3Crect width=%27192%27 height=%27192%27 rx=%2742%27 fill=%27%234f46e5%27/%3E%3Cpath d=%27M42 138h108M56 104L138 70l-10-18-35 11-29-21-11 5 18 27-24 11-11-8-8 4 16 23z%27 stroke=%27white%27 stroke-width=%2712%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 fill=%27none%27/%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml"}]}'>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -25,9 +32,51 @@
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        html, body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            min-height: 100dvh;
+            max-width: 100vw;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+            font-synthesis: none;
+        }
+        button, input, select, textarea {
+            touch-action: manipulation;
+        }
+        button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .safe-header {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+        .safe-main {
+            padding-bottom: max(1.75rem, env(safe-area-inset-bottom, 1.75rem));
+        }
+        .safe-toast {
+            bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+        }
+        @media (max-width: 650px) {
+            /* Evita zoom automático do iOS Safari ao tocar em campos de texto/senha */
+            input[type="text"],
+            input[type="password"],
+            input[type="email"],
+            input[type="number"],
+            input[type="search"],
+            select,
+            textarea {
+                font-size: 16px !important;
+            }
+            #input-pesquisa-minutas-dia,
+            #input-pesquisa-malha,
+            #input-pesquisa-bases,
+            #select-filtro-malha-cia,
+            #select-filtro-malha-origem {
+                font-size: 14px !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-200">
@@ -36,75 +85,78 @@
     <input type="file" id="file-upload-gol-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfGol(event)">
     <input type="file" id="file-upload-formal-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfFormalNoMinutas(event)">
 
-    <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50 transition-colors">
-        <!-- Linha Superior: Apenas Logo, Operação Ativa, Selo FedEx Linehaul Centralizado e Botões -->
-        <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-            <div class="flex items-center gap-4 min-w-0 shrink-0">
-                <div class="flex items-center gap-3 cursor-pointer shrink-0" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
-                    <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
-                        <i data-lucide="plane-takeoff" class="w-5 h-5 text-white"></i>
+    <header class="safe-header bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50 transition-colors">
+        <!-- Linha Superior: Logo, Operação Ativa, Selo FedEx Linehaul Centralizado (Responsivo Mobile & Desktop) e Botões -->
+        <div class="max-w-7xl mx-auto px-2.5 sm:px-4 h-14 flex items-center justify-between gap-1.5 sm:gap-3">
+            <div class="flex items-center gap-2 sm:gap-3.5 min-w-0 shrink-0">
+                <div class="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
+                    <div class="w-7 h-7 sm:w-8 sm:h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm shrink-0">
+                        <i data-lucide="plane-takeoff" class="w-4 h-4 sm:w-5 sm:h-5 text-white"></i>
                     </div>
                     <div>
-                        <h1 class="text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">Sistema Aéreo</h1>
-                        <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold whitespace-nowrap">Gestão de Minutas</p>
+                        <h1 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">Sistema Aéreo</h1>
+                        <p class="text-[9px] sm:text-[10px] text-indigo-600 dark:text-indigo-400 font-bold whitespace-nowrap">Gestão de Minutas</p>
                     </div>
                 </div>
                 
-                <span id="active-op-badge" class="hidden md:inline-flex h-8 items-center px-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-500/20 whitespace-nowrap shrink-0">
+                <span id="active-op-badge" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')" title="Voltar para Operações" class="hidden md:inline-flex h-8 items-center px-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-500/20 whitespace-nowrap shrink-0 cursor-pointer">
                     Sem Operação
                 </span>
             </div>
 
-            <!-- Centro do Cabeçalho: Logo FedEx Linehaul -->
-            <div class="hidden md:flex flex-1 items-center justify-center select-none pointer-events-none px-2">
-                <div class="inline-flex items-center gap-2.5 px-3.5 py-1 rounded-xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700/70 shadow-sm whitespace-nowrap">
-                    <div class="flex items-baseline tracking-tighter leading-none font-black text-xl" style="font-family: 'Inter', 'Arial Black', sans-serif;">
+            <!-- Centro do Cabeçalho: Logo FedEx Linehaul (Visível e compacto também no celular, igual ao Gestão de Pesos) -->
+            <div class="flex flex-1 items-center justify-center select-none pointer-events-none px-0.5 sm:px-2 min-w-0">
+                <div class="inline-flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-slate-50/85 dark:bg-slate-900/55 border border-slate-200/70 dark:border-slate-700/70 shadow-sm whitespace-nowrap">
+                    <div class="flex items-baseline tracking-tighter leading-none font-black text-[15px] sm:text-xl" style="font-family: 'Inter', 'Arial Black', sans-serif;">
                         <span class="text-[#4D148C] dark:text-[#a855f7]">Fed</span><span class="text-[#FF6200]" style="margin-left:-0.5px;">Ex</span>
                     </div>
-                    <span class="h-4 w-[1.5px] bg-slate-300 dark:bg-slate-600 rounded-full"></span>
-                    <div class="flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 text-[#FF6200] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <span class="h-3 sm:h-4 w-[1.5px] bg-slate-300 dark:bg-slate-600 rounded-full shrink-0"></span>
+                    <div class="flex items-center gap-1 sm:gap-1.5">
+                        <svg class="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-[#FF6200] shrink-0" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
                         </svg>
-                        <span class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-700 dark:text-slate-200">Linehaul</span>
+                        <span class="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-[0.14em] sm:tracking-[0.22em] text-slate-700 dark:text-slate-200">Linehaul</span>
                     </div>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2 shrink-0">
-                <button onclick="sincronizarTudoComBanco(true)" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition" title="Sincronizar">
+            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button onclick="sincronizarTudoComBanco(true)" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Sincronizar">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                 </button>
-                <button onclick="toggleDarkMode()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition" title="Tema">
+                <button onclick="toggleDarkMode()" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Tema">
                     <i data-lucide="sun" id="theme-icon" class="w-4 h-4"></i>
                 </button>
-                <div id="header-user-info" class="hidden items-center gap-2 mr-1">
-                    <span id="header-user-name" class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase"></span>
+                <div id="header-user-info" class="hidden items-center gap-1 sm:gap-2 mr-0.5">
+                    <span id="header-user-name" class="hidden min-[390px]:inline-block max-w-[68px] sm:max-w-none truncate text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 uppercase"></span>
                     <button onclick="logout()" class="text-slate-400 hover:text-rose-500 transition p-1" title="Trocar Usuário">
                         <i data-lucide="log-out" class="w-4 h-4"></i>
                     </button>
                 </div>
-                <button id="btn-finalizar-op" onclick="abrirModalFinalizarOp()" class="hidden h-8 inline-flex items-center gap-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition whitespace-nowrap">
-                    <i data-lucide="power" class="w-3.5 h-3.5"></i>
-                    <span>Finalizar Operação</span>
+                <button id="btn-finalizar-op" onclick="abrirModalFinalizarOp()" class="hidden h-8 inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] sm:text-xs font-bold shadow-sm transition whitespace-nowrap shrink-0" title="Finalizar Operação">
+                    <i data-lucide="power" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span class="hidden sm:inline">Finalizar Operação</span>
+                    <span class="sm:hidden">Finalizar</span>
                 </button>
             </div>
         </div>
 
-        <!-- Linha Inferior Exclusiva para as Abas de Navegação (Centralizada, seguindo o padrão do Controle Operacional) -->
+        <!-- Linha Inferior Exclusiva para as Abas de Navegação (100% ajustada para Mobile e Desktop) -->
         <div id="main-nav" style="display: none;" class="hidden w-full border-t border-slate-200/80 dark:border-slate-700/70 bg-slate-50/80 dark:bg-slate-900/60">
-            <div class="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-center w-full">
-                <nav class="inline-flex items-center justify-center gap-1.5 overflow-x-auto" aria-label="Navegação Principal">
-                    <button type="button" onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
-                        <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400"></i>
-                        <span>Painel da Operação</span>
+            <div class="max-w-7xl mx-auto px-2 sm:px-4 py-1.5 flex items-center justify-center w-full">
+                <nav class="grid grid-cols-3 sm:inline-flex items-center justify-center gap-1 sm:gap-1.5 w-full sm:w-auto hide-scrollbar" aria-label="Navegação Principal">
+                    <button type="button" onclick="switchMainTab('PAINEL')" id="tab-btn-painel" class="px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                        <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0"></i>
+                        <span class="hidden sm:inline">Painel da Operação</span>
+                        <span class="sm:hidden">Painel</span>
                     </button>
-                    <button type="button" onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
-                        <i data-lucide="settings" class="w-3.5 h-3.5"></i>
-                        <span>Configurações & Malha</span>
+                    <button type="button" onclick="switchMainTab('CONFIG')" id="tab-btn-config" class="px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                        <i data-lucide="settings" class="w-3.5 h-3.5 shrink-0"></i>
+                        <span class="hidden sm:inline">Configurações & Malha</span>
+                        <span class="sm:hidden">Config. & Malha</span>
                     </button>
-                    <button type="button" onclick="switchMainTab('USUARIOS')" id="tab-btn-usuarios" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap">
-                        <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                    <button type="button" onclick="switchMainTab('USUARIOS')" id="tab-btn-usuarios" class="px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                        <i data-lucide="users" class="w-3.5 h-3.5 shrink-0"></i>
                         <span>Usuários</span>
                     </button>
                 </nav>
@@ -112,82 +164,82 @@
         </div>
     </header>
 
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+    <main class="safe-main flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <!-- VIEW 0: LOGIN -->
-        <div id="login-view" class="max-w-md mx-auto mt-10 space-y-6">
+        <div id="login-view" class="max-w-md mx-auto mt-4 sm:mt-10 space-y-5 sm:space-y-6">
             <div>
-                <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">ACESSO AO SISTEMA</h2>
-                <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white">Quem está operando?</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Selecione seu nome para a distribuição de minutas</p>
+                <h2 class="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 sm:mb-2">ACESSO AO SISTEMA</h2>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Quem está operando?</h1>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 sm:mt-2">Selecione seu nome para a distribuição de minutas</p>
             </div>
-            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm">
                 <div id="users-list" class="flex flex-col divide-y divide-slate-200 dark:divide-slate-700"></div>
             </div>
         </div>
 
         <!-- VIEW 0.5: WORKSPACE -->
-        <div id="workspace-view" class="hidden max-w-4xl mx-auto mt-6 space-y-8">
-            <div class="flex flex-wrap items-center justify-between gap-3">
+        <div id="workspace-view" class="hidden max-w-4xl mx-auto mt-2 sm:mt-6 space-y-6 sm:space-y-8">
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div>
-                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SEU ESPAÇO DE TRABALHO</h2>
-                    <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white">Olá, <span id="workspace-user-name"></span>.</h1>
-                    <p id="workspace-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Uma equipe. Uma operação. Todas as minutas.</p>
+                    <h2 class="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">SEU ESPAÇO DE TRABALHO</h2>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Olá, <span id="workspace-user-name"></span>.</h1>
+                    <p id="workspace-subtitle" class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Uma equipe. Uma operação. Todas as minutas.</p>
                 </div>
-                <div class="flex items-center gap-2.5">
-                    <button onclick="switchMainTab('USUARIOS')" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm shadow-sm transition flex items-center gap-2">
-                        <i data-lucide="users" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i> Usuários
+                <div class="grid grid-cols-2 sm:flex items-center gap-2.5 w-full sm:w-auto">
+                    <button onclick="switchMainTab('USUARIOS')" class="px-3.5 sm:px-4 py-3 sm:py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2">
+                        <i data-lucide="users" class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0"></i> <span>Usuários</span>
                     </button>
-                    <button onclick="openNovaOperacaoModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-sm transition flex items-center gap-2">
-                        <i data-lucide="plus" class="w-4 h-4"></i> Criar operação
+                    <button onclick="openNovaOperacaoModal()" class="px-4 sm:px-5 py-3 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4 shrink-0"></i> <span>Criar operação</span>
                     </button>
                 </div>
             </div>
             <div class="space-y-4">
                 <div class="flex items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-2">
-                    <button onclick="setWorkspaceTab('ANDAMENTO')" id="ws-tab-andamento" class="text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2">Em andamento (<span id="count-op-andamento">0</span>)</button>
-                    <button onclick="setWorkspaceTab('HISTORICO')" id="ws-tab-historico" class="text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2">Histórico 48h (<span id="count-op-historico">0</span>)</button>
-                    <button onclick="sincronizarTudoComBanco(true)" class="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 px-1.5 py-0.5 -mb-1 rounded-lg text-sm font-bold transition" title="Atualizar operações" aria-label="Atualizar operações">↻</button>
+                    <button onclick="setWorkspaceTab('ANDAMENTO')" id="ws-tab-andamento" class="text-xs sm:text-sm font-bold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 pb-2 -mb-2 whitespace-nowrap">Em andamento (<span id="count-op-andamento">0</span>)</button>
+                    <button onclick="setWorkspaceTab('HISTORICO')" id="ws-tab-historico" class="text-xs sm:text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 pb-2 -mb-2 whitespace-nowrap">Histórico 48h (<span id="count-op-historico">0</span>)</button>
+                    <button onclick="sincronizarTudoComBanco(true)" class="ml-auto sm:ml-0 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 px-2 py-0.5 -mb-1 rounded-lg text-sm font-bold transition" title="Atualizar operações" aria-label="Atualizar operações">↻</button>
                 </div>
-                <div id="workspace-ops-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center transition-all"></div>
+                <div id="workspace-ops-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 sm:p-8 text-center transition-all"></div>
             </div>
         </div>
 
         <!-- VIEW 1: PAINEL GERAL -->
-        <div id="dashboard-view" class="hidden space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+        <div id="dashboard-view" class="hidden space-y-4 sm:space-y-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                <div class="col-span-1 order-1 bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
                     <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total de Minutas</span>
-                    <span class="text-3xl font-black text-slate-900 dark:text-white" id="resumo-total">0</span>
+                    <span class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mt-1" id="resumo-total">0</span>
                 </div>
-                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm md:col-span-2">
-                    <div class="flex items-center justify-between mb-3">
+                <div class="col-span-2 order-3 md:order-2 bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm md:col-span-2">
+                    <div class="flex items-center justify-between mb-2.5 sm:mb-3">
                         <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total por Usuário</span>
                     </div>
-                    <div class="grid grid-cols-3 gap-2" id="resumo-usuarios"></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" id="resumo-usuarios"></div>
                 </div>
-                <div onclick="abrirModalFinalizadas()" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-emerald-500/50 transition group">
-                    <div class="flex items-center justify-between">
+                <div onclick="abrirModalFinalizadas()" class="col-span-1 order-2 md:order-3 bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-emerald-500/50 transition group">
+                    <div class="flex items-center justify-between gap-1">
                         <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Finalizadas</span>
-                        <span class="text-[10px] font-semibold text-slate-400 group-hover:text-emerald-500 transition flex items-center gap-1">Ver detalhes <i data-lucide="external-link" class="w-3 h-3"></i></span>
+                        <span class="text-[10px] font-semibold text-slate-400 group-hover:text-emerald-500 transition flex items-center gap-0.5 whitespace-nowrap">Ver <span class="hidden sm:inline">detalhes</span> <i data-lucide="external-link" class="w-3 h-3"></i></span>
                     </div>
-                    <span class="text-3xl font-black text-emerald-500" id="resumo-finalizadas">0</span>
+                    <span class="text-2xl sm:text-3xl font-black text-emerald-500 mt-1" id="resumo-finalizadas">0</span>
                 </div>
             </div>
-            <div class="bg-white dark:bg-slate-800 rounded-2xl p-2 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
-                <div class="flex-1 flex items-center gap-2 overflow-x-auto hide-scrollbar p-1" id="filtro-usuarios-container"></div>
+            <div class="bg-white dark:bg-slate-800 rounded-2xl p-2 sm:p-2.5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center gap-2.5 sm:gap-4">
+                <div class="flex-1 flex items-center gap-1.5 sm:gap-2 overflow-x-auto hide-scrollbar p-0.5 sm:p-1" id="filtro-usuarios-container"></div>
                 <div class="w-px h-8 bg-slate-200 dark:bg-slate-700 hidden md:block"></div>
-                <div class="flex items-center gap-1 p-1 pr-2">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-2">Status:</span>
-                    <button onclick="setStatusFilter('TODOS')" id="btn-status-todos" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">Todos</button>
-                    <button onclick="setStatusFilter('PENDENTE')" id="btn-status-pendente" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50">Pendentes</button>
-                    <button onclick="setStatusFilter('CONCLUÍDA')" id="btn-status-fazendo" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50">Finalizadas</button>
+                <div class="grid grid-cols-3 md:flex items-center gap-1 p-0.5 sm:p-1 sm:pr-2 w-full md:w-auto border-t md:border-t-0 border-slate-100 dark:border-slate-700/60 pt-2 md:pt-1">
+                    <span class="hidden md:inline text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-2">Status:</span>
+                    <button onclick="setStatusFilter('TODOS')" id="btn-status-todos" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-center">Todos</button>
+                    <button onclick="setStatusFilter('PENDENTE')" id="btn-status-pendente" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-center">Pendentes</button>
+                    <button onclick="setStatusFilter('CONCLUÍDA')" id="btn-status-fazendo" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-center">Finalizadas</button>
                 </div>
             </div>
             <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                <div class="p-4 border-b border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-slate-50/50 dark:bg-slate-800/50">
+                <div class="p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-slate-50/50 dark:bg-slate-800/50">
                     <div>
                         <h2 class="text-sm font-bold text-slate-900 dark:text-white">Minutas do Dia</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Clique na minuta para abrir os campos e gerenciar a emissão</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Toque na minuta para abrir os campos e gerenciar a emissão</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                         <div class="relative w-full sm:w-64">
@@ -203,39 +255,39 @@
             </div>
         </div>
 
-        <!-- VIEW 2: DETALHE MINUTA -->
+        <!-- VIEW 2: DETALHE MINUTA (100% Otimizado Mobile & Desktop) -->
         <div id="detail-view" class="hidden max-w-3xl mx-auto space-y-4">
-            <button onclick="switchMainTab('PAINEL')" class="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition mb-4">
+            <button onclick="switchMainTab('PAINEL')" class="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition mb-2 sm:mb-4 py-1">
                 <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar ao Painel
             </button>
-            <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-bl-full -z-0"></div>
-                <div class="flex flex-col md:flex-row justify-between items-start gap-4 relative z-10">
+                <div class="flex flex-col md:flex-row justify-between items-stretch md:items-start gap-4 relative z-10">
                     <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span id="detail-cia-badge" class="px-2 py-0.5 rounded text-xs font-bold text-white uppercase tracking-wider shadow-sm"></span>
-                            <span id="detail-destino" class="text-2xl font-black text-slate-900 dark:text-white truncate"></span>
+                        <div class="flex items-center gap-2.5 sm:gap-3 mb-1.5 sm:mb-2">
+                            <span id="detail-cia-badge" class="px-2 py-0.5 rounded text-xs font-bold text-white uppercase tracking-wider shadow-sm shrink-0"></span>
+                            <span id="detail-destino" class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white truncate"></span>
                         </div>
-                        <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Clique no botão ao lado de cada campo para copiar</p>
+                        <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Toque no botão ao lado de cada campo para copiar</p>
                     </div>
-                    <div class="flex flex-col items-end gap-2 shrink-0">
-                        <div class="flex flex-nowrap items-center justify-end gap-2">
-                            <button id="btn-autofill-latam" onclick="abrirPortalLatamAutoFill()" class="hidden px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                    <div class="flex flex-col sm:items-end gap-2 w-full md:w-auto shrink-0">
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                            <button id="btn-autofill-latam" onclick="abrirPortalLatamAutoFill()" class="hidden px-3 sm:px-3.5 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap">
                                 <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0"></i> <span>Preencher Minuta</span>
                             </button>
-                            <button id="btn-portal-gol" onclick="window.open('https://servicos.gollog.com.br/app/main/shipping-form-steps', '_blank')" class="hidden px-3.5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 whitespace-nowrap shrink-0">
-                                <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0"></i> <span>Abrir Site GOLLOG</span>
+                            <button id="btn-portal-gol" onclick="window.open('https://servicos.gollog.com.br/app/main/shipping-form-steps', '_blank')" class="hidden px-3 sm:px-3.5 py-2.5 sm:py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap">
+                                <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0"></i> <span>Site GOLLOG</span>
                             </button>
-                            <button id="btn-relatorio-individual-topo" onclick="if(minutaAberta) gerarRelatorioIndividualMinuta(minutaAberta.id)" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 whitespace-nowrap shrink-0" title="Gerar PDF e rascunho de e-mail (.eml) apenas desta minuta">
-                                <i data-lucide="file-output" class="w-3.5 h-3.5 shrink-0"></i> <span>Relatório Individual</span>
-                            </button>
-                            <button onclick="marcarConcluida()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                            <button onclick="marcarConcluida()" class="px-3.5 sm:px-4 py-2.5 sm:py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap">
                                 <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i> <span>Concluir</span>
                             </button>
+                            <button id="btn-relatorio-individual-topo" onclick="if(minutaAberta) gerarRelatorioIndividualMinuta(minutaAberta.id)" class="px-3 sm:px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap" title="Gerar PDF e rascunho de e-mail (.eml) apenas desta minuta">
+                                <i data-lucide="file-output" class="w-3.5 h-3.5 shrink-0"></i> <span>Relatório Indiv.</span>
+                            </button>
+                            <button id="btn-refazer-minuta-topo" onclick="if(minutaAberta) refazerMinutaIndividual(minutaAberta.id)" class="px-3 sm:px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 whitespace-nowrap" title="Limpar captura/PDF e AWB apenas deste destino para refazer">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 shrink-0"></i> <span>Refazer</span>
+                            </button>
                         </div>
-                        <button id="btn-refazer-minuta-topo" onclick="if(minutaAberta) refazerMinutaIndividual(minutaAberta.id)" class="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shrink-0" title="Limpar captura/PDF e AWB apenas deste destino para refazer">
-                            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 shrink-0"></i> <span>Refazer</span>
-                        </button>
                     </div>
                 </div>
             </div>
@@ -295,22 +347,22 @@
                         <h2 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="map" class="w-4 h-4 text-indigo-500"></i> Malha Aérea - Inbound (Destinos & Regras)</h2>
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Gerencie cias, origens, produtos e regras automáticas de peso/dias</p>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
                         <div class="relative w-full sm:w-52">
                             <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-                            <input type="text" id="input-pesquisa-malha" oninput="renderMalha()" placeholder="Buscar IATA ou Cidade..." class="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase">
+                            <input type="text" id="input-pesquisa-malha" oninput="renderMalha()" placeholder="Buscar IATA ou Cidade..." class="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase">
                         </div>
-                        <select id="select-filtro-malha-cia" onchange="renderMalha()" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <select id="select-filtro-malha-cia" onchange="renderMalha()" class="flex-1 sm:flex-initial px-2.5 py-2 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300">
                             <option value="TODAS">Cia: Todas</option>
                             <option value="LATAM">LATAM</option>
                             <option value="GOL">GOL</option>
                         </select>
-                        <select id="select-filtro-malha-origem" onchange="renderMalha()" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <select id="select-filtro-malha-origem" onchange="renderMalha()" class="flex-1 sm:flex-initial px-2.5 py-2 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300">
                             <option value="TODAS">Origem: Todas</option>
                             <option value="GRU">GRU</option>
                             <option value="CGH">CGH</option>
                         </select>
-                        <button onclick="abrirModalNovoDestino()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Novo Destino</button>
+                        <button onclick="abrirModalNovoDestino()" class="w-full sm:w-auto px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Novo Destino</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto p-4">
@@ -332,14 +384,14 @@
                         <h2 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-orange-500"></i> Gestão de Bases (Exclusivo Minutas GOL)</h2>
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Dados cadastrais, CNPJ, IE e seguro para embarques GOL</p>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                         <div class="relative w-full sm:w-64">
                             <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-                            <input type="text" id="input-pesquisa-bases" oninput="renderBases()" placeholder="Buscar IATA, Razão Social ou CNPJ..." class="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 uppercase">
+                            <input type="text" id="input-pesquisa-bases" oninput="renderBases()" placeholder="Buscar IATA, Razão Social ou CNPJ..." class="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 uppercase">
                         </div>
-                        <button onclick="sincronizarCatalogoPadraoBasesGol()" class="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Carregar/atualizar todas as 39 bases da planilha GOLLOG com endereços e CEPs conferidos"><i data-lucide="database-backup" class="w-3.5 h-3.5"></i> Carregar 39 Bases GOLLOG</button>
-                        <button onclick="baixarTemplatePdfGolEmBranco()" class="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Baixar arquivo PDF em branco da Minuta Eletrônica GOL guardado no banco"><i data-lucide="file-down" class="w-3.5 h-3.5"></i> PDF em Branco</button>
-                        <button onclick="abrirModalBase()" class="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Adicionar Base</button>
+                        <button onclick="sincronizarCatalogoPadraoBasesGol()" class="flex-1 sm:flex-initial justify-center px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Carregar/atualizar todas as 39 bases da planilha GOLLOG com endereços e CEPs conferidos"><i data-lucide="database-backup" class="w-3.5 h-3.5 shrink-0"></i> <span>39 Bases GOLLOG</span></button>
+                        <button onclick="baixarTemplatePdfGolEmBranco()" class="flex-1 sm:flex-initial justify-center px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm" title="Baixar arquivo PDF em branco da Minuta Eletrônica GOL guardado no banco"><i data-lucide="file-down" class="w-3.5 h-3.5 shrink-0"></i> <span>PDF em Branco</span></button>
+                        <button onclick="abrirModalBase()" class="w-full sm:w-auto justify-center px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"><i data-lucide="plus" class="w-3.5 h-3.5 shrink-0"></i> <span>Adicionar Base</span></button>
                     </div>
                 </div>
                 <div class="overflow-x-auto p-4">
@@ -803,8 +855,8 @@
         </div>
     </div>
 
-    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2.5 rounded-xl shadow-lg text-sm font-bold flex items-center gap-2 transition-all duration-300 opacity-0 translate-y-4 pointer-events-none z-50">
-        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 dark:text-emerald-500"></i><span id="toast-msg">Copiado!</span>
+    <div id="toast" class="safe-toast fixed left-1/2 -translate-x-1/2 max-w-[92vw] w-max bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-bold flex items-center gap-2 transition-all duration-300 opacity-0 translate-y-4 pointer-events-none z-[260]">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 dark:text-emerald-500 shrink-0"></i><span id="toast-msg" class="truncate">Copiado!</span>
     </div>
 
 <!-- JAVASCRIPT BLINDADO -->
@@ -1640,6 +1692,8 @@
         function fecharModalSistema() { document.getElementById('modal-alerta').classList.add('hidden'); }
         function toggleDarkMode() {
             document.documentElement.classList.toggle('dark'); const isDark = document.documentElement.classList.contains('dark'); localStorage.theme = isDark ? 'dark' : 'light';
+            const metaTheme = document.getElementById('meta-theme-color');
+            if (metaTheme) metaTheme.setAttribute('content', isDark ? '#0f172a' : '#ffffff');
             document.getElementById('theme-icon').setAttribute('data-lucide', isDark ? 'sun' : 'moon'); if(window.lucide) lucide.createIcons();
         }
 
@@ -1652,8 +1706,8 @@
             const usrView = document.getElementById('usuarios-view');
             if (usrView) usrView.classList.add('hidden');
 
-            const baseClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5 whitespace-nowrap';
-            const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap';
+            const baseClass = 'px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap';
+            const activeClass = 'px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap';
             if(document.getElementById('tab-btn-painel')) {
                 document.getElementById('tab-btn-painel').className = baseClass;
                 document.getElementById('tab-btn-config').className = baseClass;
@@ -2804,19 +2858,19 @@
             }
             if (abaWorkspace === 'ANDAMENTO') {
                 if(operacoesAtivasDb.length > 0) {
-                    list.className = 'grid gap-4 text-left';
+                    list.className = 'grid gap-3.5 sm:gap-4 text-left';
                     list.innerHTML = operacoesAtivasDb.map(op => {
                         const dataNome = op.nome.includes(' ') ? op.nome.split(' ')[1] : op.nome;
-                        return `<div onclick="entrarOperacao('${op.nome}')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm hover:border-indigo-500 dark:hover:border-indigo-500 cursor-pointer transition flex items-center justify-between group"><div><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold mb-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Em andamento</span><h3 class="font-bold text-slate-900 dark:text-white text-xl tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${dataNome} · Entrar para conferir e preencher</p></div><span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-1 transition-transform">→</span></div>`;
+                        return `<div onclick="entrarOperacao('${escapeAttr(op.nome)}')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 sm:p-6 shadow-sm hover:border-indigo-500 dark:hover:border-indigo-500 cursor-pointer transition flex items-center justify-between gap-3 group"><div class="min-w-0"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold mb-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Em andamento</span><h3 class="font-bold text-slate-900 dark:text-white text-lg sm:text-xl tracking-tight truncate">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${dataNome} · Entrar para conferir e preencher</p></div><span class="text-indigo-600 dark:text-indigo-400 text-2xl leading-none group-hover:translate-x-1 transition-transform shrink-0">→</span></div>`;
                     }).join('');
                 } else {
-                    list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center';
+                    list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 sm:p-8 text-center';
                     list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação aberta. Crie a operação do dia para começar.</p>`;
                 }
             } else {
                 if(historicoOperacoes.length > 0) {
-                    list.className = 'grid gap-4 text-left';
-                    list.innerHTML = historicoOperacoes.map(op => `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center justify-between flex-wrap gap-3"><div onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="cursor-pointer"><h3 class="font-bold text-slate-900 dark:text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Finalizada • Modo Consulta (48h)</p></div><div class="flex items-center gap-2"><button onclick="reabrirOperacao('${escapeAttr(op.id)}', '${escapeAttr(op.nome)}')" class="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button><button onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition">Consultar →</button></div></div>`).join('');
+                    list.className = 'grid gap-3.5 sm:gap-4 text-left';
+                    list.innerHTML = historicoOperacoes.map(op => `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="cursor-pointer min-w-0"><h3 class="font-bold text-slate-900 dark:text-white text-base sm:text-lg tracking-tight truncate">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1">Finalizada • Modo Consulta (48h)</p></div><div class="flex items-center justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-700/60"><button onclick="reabrirOperacao('${escapeAttr(op.id)}', '${escapeAttr(op.nome)}')" class="flex-1 sm:flex-initial text-center px-3.5 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button><button onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="flex-1 sm:flex-initial text-center px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition">Consultar →</button></div></div>`).join('');
                 } else {
                     list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center';
                     list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação no histórico de 48h.</p>`;
@@ -2923,7 +2977,7 @@
         }
 
         window.setUserFilter = function(nome) { filtroUsuario = nome; renderDashboard(); }
-        window.setStatusFilter = function(status) { filtroStatus = status; const btnT = document.getElementById('btn-status-todos'); const btnP = document.getElementById('btn-status-pendente'); const btnF = document.getElementById('btn-status-fazendo'); const baseClass = "px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50"; const activeClass = "px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400"; btnT.className = baseClass; btnP.className = baseClass; btnF.className = baseClass; if(status === 'TODOS') btnT.className = activeClass; if(status === 'PENDENTE') btnP.className = activeClass; if(status === 'CONCLUÍDA') btnF.className = activeClass; renderDashboard(); }
+        window.setStatusFilter = function(status) { filtroStatus = status; const btnT = document.getElementById('btn-status-todos'); const btnP = document.getElementById('btn-status-pendente'); const btnF = document.getElementById('btn-status-fazendo'); const baseClass = "px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-center"; const activeClass = "px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-center"; btnT.className = baseClass; btnP.className = baseClass; btnF.className = baseClass; if(status === 'TODOS') btnT.className = activeClass; if(status === 'PENDENTE') btnP.className = activeClass; if(status === 'CONCLUÍDA') btnF.className = activeClass; renderDashboard(); }
 
         window.limparPesquisaMinutasDia = function() {
             const inp = document.getElementById('input-pesquisa-minutas-dia');
@@ -3028,18 +3082,21 @@
                             badgeCapturas = `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">📄 PDF GOL OK${temAwb ? ' • CT-e ' + m.dados.awb : ''}</span>`;
                         }
                     }
+                    const temBadgesExtras = Boolean(badgeDono || badgeExcecao || badgeManualGol || badgeCapturas || btnInserirAwbRapido);
                     return `
-                    <div onclick="abrirMinuta('${m.id}')" class="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition flex items-center justify-between gap-2 group">
-                        <div class="flex items-center gap-3 flex-wrap min-w-0">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${corCia}">${m.cia}</span>
-                            <span class="font-bold text-slate-900 dark:text-white">${m.destino}</span>
-                            ${badgeDono}
-                            ${badgeExcecao}
-                            ${badgeManualGol}
-                            ${badgeCapturas}
+                    <div onclick="abrirMinuta('${m.id}')" class="p-3.5 sm:p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 group">
+                        <div class="flex items-center justify-between sm:justify-start gap-2.5 min-w-0 w-full sm:w-auto">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border shrink-0 ${corCia}">${m.cia}</span>
+                                <span class="font-bold text-slate-900 dark:text-white text-sm sm:text-base truncate">${m.destino}</span>
+                            </div>
+                            <div class="flex sm:hidden items-center gap-1.5 shrink-0">
+                                <span class="text-[11px] font-bold uppercase ${corStatus}">${m.status}</span>
+                                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition"></i>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-2.5 shrink-0">
-                            ${btnInserirAwbRapido}
+                        ${temBadgesExtras ? `<div class="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:mr-auto">${badgeDono}${badgeExcecao}${badgeManualGol}${badgeCapturas}${btnInserirAwbRapido}</div>` : ''}
+                        <div class="hidden sm:flex items-center gap-2.5 shrink-0">
                             <span class="text-xs font-bold uppercase ${corStatus}">${m.status}</span>
                             <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition"></i>
                         </div>
@@ -3070,20 +3127,20 @@
                         ? `<button onclick="abrirModalInserirAwbManual('${m.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold transition flex items-center gap-1 shadow-sm" title="Inserir AWB enviado pela GOL"><i data-lucide="plus-circle" class="w-3 h-3"></i> Inserir AWB</button>`
                         : '';
                     return `
-                    <div class="py-3 flex items-center justify-between gap-2">
+                    <div class="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                         <div class="min-w-0">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${corCia}">${m.cia}</span>
                                 <span class="font-bold text-slate-900 dark:text-white text-sm">${m.destino}</span>
                             </div>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">${awbTxt}Concluída por <strong class="text-indigo-600 dark:text-indigo-400">${quemConcluiu}</strong> às <strong>${horario}</strong></p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${awbTxt}Concluída por <strong class="text-indigo-600 dark:text-indigo-400">${quemConcluiu}</strong> às <strong>${horario}</strong></p>
                         </div>
-                        <div class="flex items-center gap-1.5 shrink-0">
+                        <div class="flex items-center justify-end gap-1.5 shrink-0 w-full sm:w-auto">
                             ${btnAwbModalFin}
-                            <button onclick="gerarRelatorioIndividualMinuta('${m.id}')" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition flex items-center gap-1 shadow-sm" title="Gerar PDF e E-mail individual">
+                            <button onclick="gerarRelatorioIndividualMinuta('${m.id}')" class="flex-1 sm:flex-initial justify-center px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] sm:text-[10px] font-bold transition flex items-center gap-1 shadow-sm" title="Gerar PDF e E-mail individual">
                                 <i data-lucide="send" class="w-3 h-3"></i> Relatório
                             </button>
-                            <button onclick="fecharModalFinalizadas(); refazerMinutaIndividual('${m.id}')" class="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-bold transition" title="Refazer esta minuta">
+                            <button onclick="fecharModalFinalizadas(); refazerMinutaIndividual('${m.id}')" class="flex-1 sm:flex-initial justify-center px-2.5 py-1.5 sm:px-2 sm:py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] sm:text-[10px] font-bold transition" title="Refazer esta minuta">
                                 Refazer
                             </button>
                         </div>
@@ -3182,12 +3239,12 @@
                         </div>
                         <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${badgeExcelCls}">${badgeExcelTxt}</span>
                     </div>
-                    <div class="p-5 flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex flex-wrap items-center gap-3">
-                            <button id="btn-previa-form-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnFormCls}" ${btnFormClick}>${btnFormTxt}</button>
-                            <button id="btn-previa-awb-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnAwbCls}" ${btnAwbClick}>${btnAwbTxt}</button>
+                    <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+                            <button id="btn-previa-form-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm text-center justify-center ${btnFormCls}" ${btnFormClick}>${btnFormTxt}</button>
+                            <button id="btn-previa-awb-${iata3}" data-minuta-id="${minutaAberta.id}" data-dest-bruto="${destBruto}" class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm text-center justify-center ${btnAwbCls}" ${btnAwbClick}>${btnAwbTxt}</button>
                         </div>
-                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 text-slate-500 dark:text-slate-300 font-mono text-[10px] font-bold" title="Identificador único de vínculo de captura deste bloco">
+                        <span class="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 text-slate-500 dark:text-slate-300 font-mono text-[10px] font-bold" title="Identificador único de vínculo de captura deste bloco">
                             ID: ${minutaAberta.dados?.BLOCO_ID || minutaAberta.destino}
                         </span>
                     </div>
@@ -3238,14 +3295,14 @@
                     </div>
                     ${avisoGolRapido30kg}
                     ${bannerModoManual}
-                    <div class="p-5 flex flex-wrap items-center gap-3">
-                        <button onclick="document.getElementById('file-upload-gol-pdf').click()" class="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow-sm flex items-center gap-2">
-                            <i data-lucide="upload" class="w-4 h-4"></i> ${pdfGolSalvo ? 'Substituir por PDF do Site GOL' : 'Anexar PDF da Minuta GOL'}
+                    <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3">
+                        <button onclick="document.getElementById('file-upload-gol-pdf').click()" class="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow-sm flex items-center gap-2">
+                            <i data-lucide="upload" class="w-4 h-4 shrink-0"></i> <span>${pdfGolSalvo ? 'Substituir por PDF do Site GOL' : 'Anexar PDF da Minuta GOL'}</span>
                         </button>
-                        <button onclick="gerarMinutaManualGol('${minutaAberta.id}')" class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition shadow-sm flex items-center gap-2" title="Preenche automaticamente a Minuta Eletrônica GOL em branco e permite concluir sem AWB imediato">
-                            <i data-lucide="file-pen-line" class="w-4 h-4"></i> ${ehModoManualGol ? 'Regerar Minuta Manual GOL' : 'Gerar Minuta Manual (Contingência)'}
+                        <button onclick="gerarMinutaManualGol('${minutaAberta.id}')" class="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition shadow-sm flex items-center gap-2" title="Preenche automaticamente a Minuta Eletrônica GOL em branco e permite concluir sem AWB imediato">
+                            <i data-lucide="file-pen-line" class="w-4 h-4 shrink-0"></i> <span>${ehModoManualGol ? 'Regerar Minuta Manual GOL' : 'Gerar Minuta Manual (Contingência)'}</span>
                         </button>
-                        <button id="btn-previa-pdf-gol" class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnPreviaGolCls}" ${btnPreviaGolClick}>${btnPreviaGolTxt}</button>
+                        <button id="btn-previa-pdf-gol" class="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${btnPreviaGolCls}" ${btnPreviaGolClick}>${btnPreviaGolTxt}</button>
                     </div>
                     ${buildAiGolPdfStatusStripHtml(minutaAberta, pdfGolSalvo)}
                 </div>`;
@@ -4846,12 +4903,12 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 if (cia === 'LATAM' && chaveUpper === 'ORIGEM') semBotaoCopiar = true;
 
                 if (semBotaoCopiar) {
-                    linhas += `<div class="flex items-center justify-between py-2.5 border-b border-slate-50 dark:border-slate-700/50 last:border-0 group"><span class="text-xs font-bold text-slate-500 dark:text-slate-400 w-36 shrink-0">${chave}</span><span class="flex-1 text-sm font-bold text-slate-900 dark:text-white truncate pr-4">${valor}</span><div class="w-[88px]"></div></div>`;
+                    linhas += `<div class="flex items-center justify-between gap-3 py-2.5 border-b border-slate-50 dark:border-slate-700/50 last:border-0 group"><div class="flex flex-col sm:flex-row sm:items-center flex-1 min-w-0 gap-0.5 sm:gap-3"><span class="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 sm:w-36 shrink-0">${chave}</span><span class="flex-1 text-sm font-bold text-slate-900 dark:text-white break-words sm:truncate sm:pr-4">${valor}</span></div><div class="hidden sm:block w-[88px] shrink-0"></div></div>`;
                 } else {
-                    linhas += `<div class="flex items-center justify-between py-2.5 border-b border-slate-50 dark:border-slate-700/50 last:border-0 group"><span class="text-xs font-bold text-slate-500 dark:text-slate-400 w-36 shrink-0">${chave}</span><span class="flex-1 text-sm font-bold text-slate-900 dark:text-white truncate pr-4">${valor}</span><button onclick="copiarValor(this, '${String(valor).replace(/'/g, "\\'")}')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 transition w-[88px] flex items-center justify-center gap-1.5"><i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar</button></div>`;
+                    linhas += `<div class="flex items-center justify-between gap-3 py-2.5 border-b border-slate-50 dark:border-slate-700/50 last:border-0 group"><div class="flex flex-col sm:flex-row sm:items-center flex-1 min-w-0 gap-0.5 sm:gap-3"><span class="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 sm:w-36 shrink-0">${chave}</span><span class="flex-1 text-sm font-bold text-slate-900 dark:text-white break-words sm:truncate sm:pr-4">${valor}</span></div><button onclick="copiarValor(this, '${String(valor).replace(/'/g, "\\'")}')" class="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 transition w-[88px] shrink-0 flex items-center justify-center gap-1.5"><i data-lucide="copy" class="w-3.5 h-3.5 shrink-0"></i> Copiar</button></div>`;
                 }
             }
-            return `<div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4"><div class="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700/50 px-5 py-3"><h3 class="text-sm font-bold text-slate-900 dark:text-white">${titulo}</h3></div><div class="p-5">${linhas}</div></div>`;
+            return `<div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4"><div class="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700/50 px-4 sm:px-5 py-3"><h3 class="text-sm font-bold text-slate-900 dark:text-white">${titulo}</h3></div><div class="p-4 sm:p-5">${linhas}</div></div>`;
         }
 
         window.copiarValor = function(btn, valor) { navigator.clipboard.writeText(valor).then(() => { showToast(`Copiado!`); const iconeOrigin = btn.innerHTML; btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i> Copiado`; btn.classList.remove('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); btn.classList.add('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); if(window.lucide) lucide.createIcons(); setTimeout(() => { btn.innerHTML = iconeOrigin; btn.classList.remove('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); btn.classList.add('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); if(window.lucide) lucide.createIcons(); }, 2000); }); }
@@ -9952,21 +10009,21 @@ Verifique os dados da base/remessa antes de prosseguir.`
                         ${pdfFormal ? '✅ Doc. Formal Anexado' : '⚠️ PDF Formal Pendente'}
                     </span>
                 </div>
-                <div class="p-5 flex flex-wrap items-center justify-between gap-3">
-                    <div class="flex flex-wrap items-center gap-2.5">
+                <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+                    <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
                         <button type="button" onclick="abrirModalPreviaPdfFormal()"
-                            class="px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${pdfFormal ? 'bg-purple-600 hover:bg-purple-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed'}"
+                            class="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm ${pdfFormal ? 'bg-purple-600 hover:bg-purple-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed'}"
                             ${pdfFormal ? '' : 'disabled'}>
                             📄 Pré-visualizar Documento Formal
                         </button>
                         <button type="button" onclick="document.getElementById('file-upload-formal-pdf').click()"
-                            class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition">
+                            class="w-full sm:w-auto justify-center px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition">
                             📎 ${pdfFormal ? 'Trocar PDF Formal' : 'Anexar PDF Formal'}
                         </button>
                     </div>
-                    <div>
+                    <div class="w-full sm:w-auto">
                         <button type="button" onclick="gerarRelatorioFormalEDispararEmail()"
-                            class="px-4 py-2.5 rounded-xl text-xs font-extrabold transition shadow-sm ${estaConcluida ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'}"
+                            class="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl text-xs font-extrabold transition shadow-sm ${estaConcluida ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'}"
                             ${estaConcluida ? '' : 'disabled'}
                             title="${estaConcluida ? 'Gera o PDF da Minuta Formal e o e-mail .eml com a Documentação Formal + Minuta anexadas' : 'Conclua esta minuta primeiro para liberar o botão Gerar Relatório Formal'}">
                             ${estaConcluida ? '📑 Gerar Relatório Formal (E-mail + 2 Anexos)' : '🔒 Conclua a Minuta p/ Liberar Relatório Formal'}
