@@ -58,6 +58,14 @@
         .safe-toast {
             bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
         }
+        @media (max-width: 767px) {
+            /* No celular, oculta na linha 1 os elementos que ficam na sub-barra mobile para não sobrepor o selo FedEx Linehaul */
+            #active-op-badge,
+            #header-user-name,
+            #btn-finalizar-op {
+                display: none !important;
+            }
+        }
         @media (max-width: 650px) {
             /* Evita zoom automático do iOS Safari ao tocar em campos de texto/senha */
             input[type="text"],
@@ -86,16 +94,16 @@
     <input type="file" id="file-upload-formal-pdf" accept=".pdf,application/pdf" class="hidden" onchange="processarUploadPdfFormalNoMinutas(event)">
 
     <header class="safe-header bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50 transition-colors">
-        <!-- Linha Superior: Logo, Operação Ativa, Selo FedEx Linehaul Centralizado (Responsivo Mobile & Desktop) e Botões -->
-        <div class="max-w-7xl mx-auto px-2.5 sm:px-4 h-14 flex items-center justify-between gap-1.5 sm:gap-3">
-            <div class="flex items-center gap-2 sm:gap-3.5 min-w-0 shrink-0">
-                <div class="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
-                    <div class="w-7 h-7 sm:w-8 sm:h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm shrink-0">
-                        <i data-lucide="plane-takeoff" class="w-4 h-4 sm:w-5 sm:h-5 text-white"></i>
+        <!-- Linha Superior: Intacta no Computador (md:h-16 md:px-4) e 100% ajustada sem sobreposição no Celular -->
+        <div class="max-w-7xl mx-auto px-2.5 md:px-4 h-14 md:h-16 flex items-center justify-between gap-1 md:gap-3">
+            <div class="flex items-center gap-2 md:gap-3.5 min-w-0 shrink-0">
+                <div class="flex items-center gap-1.5 md:gap-3 cursor-pointer shrink-0" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')">
+                    <div class="w-7 h-7 md:w-8 md:h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm shrink-0">
+                        <i data-lucide="plane-takeoff" class="w-4 h-4 md:w-5 md:h-5 text-white"></i>
                     </div>
                     <div>
-                        <h1 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">Sistema Aéreo</h1>
-                        <p class="text-[9px] sm:text-[10px] text-indigo-600 dark:text-indigo-400 font-bold whitespace-nowrap">Gestão de Minutas</p>
+                        <h1 class="text-[11px] md:text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">Sistema Aéreo</h1>
+                        <p class="text-[9px] md:text-[10px] text-indigo-600 dark:text-indigo-400 font-bold whitespace-nowrap">Gestão de Minutas</p>
                     </div>
                 </div>
                 
@@ -104,40 +112,54 @@
                 </span>
             </div>
 
-            <!-- Centro do Cabeçalho: Logo FedEx Linehaul (Visível e compacto também no celular, igual ao Gestão de Pesos) -->
-            <div class="flex flex-1 items-center justify-center select-none pointer-events-none px-0.5 sm:px-2 min-w-0">
-                <div class="inline-flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-slate-50/85 dark:bg-slate-900/55 border border-slate-200/70 dark:border-slate-700/70 shadow-sm whitespace-nowrap">
-                    <div class="flex items-baseline tracking-tighter leading-none font-black text-[15px] sm:text-xl" style="font-family: 'Inter', 'Arial Black', sans-serif;">
+            <!-- Centro do Cabeçalho: Logo FedEx Linehaul (Centralizado sem sobreposição no celular e tamanho original no computador) -->
+            <div class="flex flex-1 items-center justify-center select-none pointer-events-none px-1 md:px-2 min-w-0">
+                <div class="inline-flex items-center gap-1.5 md:gap-2.5 px-2 md:px-3.5 py-0.5 md:py-1 rounded-lg md:rounded-xl bg-slate-50/85 dark:bg-slate-900/55 border border-slate-200/70 dark:border-slate-700/70 shadow-sm whitespace-nowrap">
+                    <div class="flex items-baseline tracking-tighter leading-none font-black text-[13px] md:text-xl" style="font-family: 'Inter', 'Arial Black', sans-serif;">
                         <span class="text-[#4D148C] dark:text-[#a855f7]">Fed</span><span class="text-[#FF6200]" style="margin-left:-0.5px;">Ex</span>
                     </div>
-                    <span class="h-3 sm:h-4 w-[1.5px] bg-slate-300 dark:bg-slate-600 rounded-full shrink-0"></span>
-                    <div class="flex items-center gap-1 sm:gap-1.5">
-                        <svg class="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-[#FF6200] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <span class="h-3 md:h-4 w-[1.5px] bg-slate-300 dark:bg-slate-600 rounded-full shrink-0"></span>
+                    <div class="flex items-center gap-1 md:gap-1.5">
+                        <svg class="w-2.5 h-2.5 md:w-3.5 md:h-3.5 text-[#FF6200] shrink-0" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
                         </svg>
-                        <span class="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-[0.14em] sm:tracking-[0.22em] text-slate-700 dark:text-slate-200">Linehaul</span>
+                        <span class="text-[8px] md:text-[11px] font-extrabold uppercase tracking-[0.12em] md:tracking-[0.22em] text-slate-700 dark:text-slate-200">Linehaul</span>
                     </div>
                 </div>
             </div>
 
-            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <button onclick="sincronizarTudoComBanco(true)" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Sincronizar">
-                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <div class="flex items-center gap-1 md:gap-2 shrink-0">
+                <button onclick="sincronizarTudoComBanco(true)" class="w-[30px] h-[30px] md:w-9 md:h-9 flex items-center justify-center rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Sincronizar">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
                 </button>
-                <button onclick="toggleDarkMode()" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Tema">
-                    <i data-lucide="sun" id="theme-icon" class="w-4 h-4"></i>
+                <button onclick="toggleDarkMode()" class="w-[30px] h-[30px] md:w-9 md:h-9 flex items-center justify-center rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition shrink-0" title="Tema">
+                    <i data-lucide="sun" id="theme-icon" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
                 </button>
-                <div id="header-user-info" class="hidden items-center gap-1 sm:gap-2 mr-0.5">
-                    <span id="header-user-name" class="hidden min-[390px]:inline-block max-w-[68px] sm:max-w-none truncate text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 uppercase"></span>
-                    <button onclick="logout()" class="text-slate-400 hover:text-rose-500 transition p-1" title="Trocar Usuário">
-                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                <div id="header-user-info" class="hidden items-center gap-1 md:gap-2 md:mr-1">
+                    <span id="header-user-name" class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase"></span>
+                    <button onclick="logout()" class="w-[30px] h-[30px] md:w-auto md:h-auto flex items-center justify-center rounded-lg md:rounded-none bg-slate-100 md:bg-transparent dark:bg-slate-700/50 md:dark:bg-transparent text-slate-500 dark:text-slate-300 md:text-slate-400 hover:text-rose-500 transition md:p-1 shrink-0" title="Trocar Usuário">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
                     </button>
                 </div>
-                <button id="btn-finalizar-op" onclick="abrirModalFinalizarOp()" class="hidden h-8 inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] sm:text-xs font-bold shadow-sm transition whitespace-nowrap shrink-0" title="Finalizar Operação">
-                    <i data-lucide="power" class="w-3.5 h-3.5 shrink-0"></i>
-                    <span class="hidden sm:inline">Finalizar Operação</span>
-                    <span class="sm:hidden">Finalizar</span>
+                <button id="btn-finalizar-op" onclick="abrirModalFinalizarOp()" class="hidden h-8 inline-flex items-center gap-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition whitespace-nowrap shrink-0" title="Finalizar Operação">
+                    <i data-lucide="power" class="w-3.5 h-3.5 shrink-0"></i> Finalizar Operação
                 </button>
+            </div>
+        </div>
+
+        <!-- Sub-barra Exclusiva Mobile (< 768px): Exibe Operação Ativa, Operador Logado e Botão Finalizar sem espremer o topo (Oculta no Computador via md:hidden) -->
+        <div id="mobile-header-subbar" class="hidden md:hidden w-full border-t border-slate-200/70 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-800/90 px-2.5 py-1.5">
+            <div class="flex items-center justify-between gap-2">
+                <button type="button" id="mobile-active-op-badge" onclick="if(usuarioLogado) switchMainTab('WORKSPACE')" class="hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold border border-indigo-200/70 dark:border-indigo-500/30 truncate max-w-[62%]">
+                    <span id="mobile-active-op-text" class="truncate">Sem Operação</span>
+                </button>
+                <div class="flex items-center gap-2 ml-auto shrink-0">
+                    <span id="mobile-header-user-name" class="text-[11px] font-extrabold text-slate-600 dark:text-slate-300 uppercase tracking-wide"></span>
+                    <button type="button" id="mobile-btn-finalizar-op" onclick="abrirModalFinalizarOp()" class="hidden h-7 inline-flex items-center gap-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold shadow-sm transition whitespace-nowrap shrink-0">
+                        <i data-lucide="power" class="w-3 h-3 shrink-0"></i>
+                        <span>Finalizar</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1764,6 +1786,46 @@
                 if (document.getElementById('tab-btn-usuarios')) document.getElementById('tab-btn-usuarios').className = activeClass;
                 renderUsuariosAdmin();
             }
+            if (typeof syncMobileHeaderBar === 'function') syncMobileHeaderBar(tab);
+        }
+
+        function syncMobileHeaderBar(tabAtual) {
+            const subbar = document.getElementById('mobile-header-subbar');
+            const mobBadge = document.getElementById('mobile-active-op-badge');
+            const mobBadgeText = document.getElementById('mobile-active-op-text');
+            const mobUser = document.getElementById('mobile-header-user-name');
+            const mobFin = document.getElementById('mobile-btn-finalizar-op');
+            const deskBadge = document.getElementById('active-op-badge');
+            const deskFin = document.getElementById('btn-finalizar-op');
+            if (!subbar) return;
+
+            if (!usuarioLogado || tabAtual === 'LOGIN') {
+                subbar.classList.add('hidden');
+                return;
+            }
+            if (mobUser) mobUser.textContent = usuarioLogado || '';
+
+            const emWorkspace = !document.getElementById('workspace-view')?.classList.contains('hidden');
+            const temOpAberta = Boolean(operacaoAtual) && !emWorkspace;
+
+            if (temOpAberta) {
+                subbar.classList.remove('hidden');
+                if (mobBadge && mobBadgeText) {
+                    const txt = (deskBadge && deskBadge.textContent && deskBadge.textContent.trim())
+                        ? deskBadge.textContent.trim()
+                        : (isOperacaoFinalizada(operacaoAtual) ? `${operacaoAtual} (CONSULTA)` : operacaoAtual);
+                    mobBadgeText.textContent = txt;
+                    mobBadge.classList.remove('hidden');
+                }
+                if (mobFin) {
+                    const podeFinalizar = deskFin ? !deskFin.classList.contains('hidden') : (!isOperacaoFinalizada(operacaoAtual));
+                    if (podeFinalizar) mobFin.classList.remove('hidden');
+                    else mobFin.classList.add('hidden');
+                }
+            } else {
+                // Na tela de Workspace (seleção de operações), mostra apenas a identificação do usuário de forma limpa ou oculta se preferir
+                subbar.classList.add('hidden');
+            }
         }
 
         let tabelasEstaticasCarregadas = false;
@@ -2251,6 +2313,7 @@
                     } else {
                         document.getElementById('active-op-badge').textContent = `${operacaoAtual} (CONSULTA)`;
                         document.getElementById('btn-finalizar-op')?.classList.add('hidden');
+                        if (typeof syncMobileHeaderBar === 'function') syncMobileHeaderBar();
                     }
                 } else if (operacoesAtivasDb.length === 1) {
                     const unicaAtiva = operacoesAtivasDb[0].nome;
@@ -2290,6 +2353,7 @@
                 }
 
                 if(!document.getElementById('workspace-view').classList.contains('hidden')) renderWorkspace();
+                if (typeof syncMobileHeaderBar === 'function') syncMobileHeaderBar();
                 if(!document.getElementById('dashboard-view').classList.contains('hidden')) { renderDashboard(); renderCardsRelatorios(); }
                 if(!document.getElementById('detail-view').classList.contains('hidden') && minutaAberta) atualizarUICapturasMinutaAberta();
                 if(!document.getElementById('config-view').classList.contains('hidden')) { renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig(); }
@@ -2909,6 +2973,7 @@
             });
             document.getElementById('active-op-badge').textContent = modoConsultaHistoricoAtivo ? `${operacaoAtual} (CONSULTA)` : operacaoAtual;
             switchMainTab('PAINEL');
+            if (typeof syncMobileHeaderBar === 'function') syncMobileHeaderBar('PAINEL');
             if (!modoConsultaHistoricoAtivo) {
                 verificarPacotePendenteSistemaAereo();
             } else {
