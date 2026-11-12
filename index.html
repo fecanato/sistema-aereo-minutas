@@ -867,14 +867,11 @@
 
         function limparChavesSemEscopoNoSessionStorage() {
             try {
-                const opPref = (operacaoAtual || '').trim().toUpperCase();
                 const remover = [];
                 for (let i = 0; i < sessionStorage.length; i++) {
                     const k = sessionStorage.key(i);
                     if (!k) continue;
                     if ((k.startsWith('minuta_img_') || k.startsWith('minuta_pdf_') || k.startsWith('minuta_excel_')) && !k.includes('::')) {
-                        remover.push(k);
-                    } else if (opPref && k.includes('::') && !k.startsWith(opPref + '::')) {
                         remover.push(k);
                     }
                 }
@@ -1553,6 +1550,45 @@
             return b64 || null;
         }
 
+        function minutaPossuiCapturaLatam(minuta, tipo) {
+            if (!minuta) return false;
+            if (obterImagemMinuta(minuta, tipo)) return true;
+            const d = minuta.dados || {};
+            if (tipo === 'FORM') {
+                if (d.tem_img_form || d.auditoria_ia_latam_form?.validado) return true;
+            } else {
+                if (d.tem_img_awb) return true;
+            }
+            if (minuta.status === 'CONCLUÍDA' && (minuta.cia || '').toUpperCase() === 'LATAM') return true;
+            return false;
+        }
+
+        function minutaPossuiPdfGol(minuta) {
+            if (!minuta) return false;
+            if (obterPdfGolMinuta(minuta)) return true;
+            const d = minuta.dados || {};
+            if (d.tem_pdf_gol || d.modo_manual_gol || d.auditoria_ia_gol?.validado) return true;
+            if (minuta.status === 'CONCLUÍDA' && (minuta.cia || '').toUpperCase() === 'GOL') return true;
+            return false;
+        }
+
+        function minutaPossuiPdfFormal(minuta) {
+            if (!minuta) return false;
+            if (obterPdfFormalMinuta(minuta)) return true;
+            const d = minuta.dados || {};
+            if (d.tem_doc_formal || d.doc_formal_pdf_nome || d.formal_meta?.valorTotalNf || d.formal_meta?.duimp) return true;
+            if (minuta.status === 'CONCLUÍDA' && ehMinutaFormal(minuta)) return true;
+            return false;
+        }
+
+        function minutaPossuiExcelLatam(minuta) {
+            if (!minuta || (minuta.cia || '').toUpperCase() !== 'LATAM') return false;
+            if (obterExcelLatamMinuta(minuta)) return true;
+            const d = minuta.dados || {};
+            if (d.tem_doc_excel || d.doc_excel_nome) return true;
+            return false;
+        }
+
         function abrirModalSistema(titulo, msg, callbackSim = null) {
             document.getElementById('alerta-titulo').textContent = titulo; document.getElementById('alerta-msg').textContent = msg; const botoesContainer = document.getElementById('alerta-botoes'); botoesContainer.innerHTML = '';
             if (callbackSim) {
@@ -1635,55 +1671,101 @@
         const filaSavesPorMinuta = new Map();
 
         // Carrega sob demanda (Lazy Load) os anexos pesados (imagens/PDF/Excel) DIRETO DO BANCO pelo ID único da minuta!
-        // IMPORTANTE: Consulta o Supabase PRIMEIRO pelo ID único da minuta antes de olhar o cache local,
-        // garantindo que uma captura de outra operação jamais impeça a leitura da captura real do dia no banco!
+        // Só é chamado quando o usuário clica para visualizar uma captura/PDF, gerar relatórios ou salvar alterações!
         async function garantirAnexosMinutaNoCache(minutaObj, forcarConsultaBanco = false) {
             if (!minutaObj) return minutaObj;
             if (!minutaObj.dados) minutaObj.dados = {};
             const d = minutaObj.dados;
             const opEscopo = minutaObj.operacao || operacaoAtual || '';
             const destBruto = (minutaObj.destino || '').trim().toUpperCase();
-            const iata3 = extrairIataBase(destBruto);
             const cia = (minutaObj.cia || '').toUpperCase();
 
             const ehFormal = ehMinutaFormal(minutaObj);
+            // Primeiro hidrata do cache local da sessão se já existir para este ID/operação
+            if (cia === 'LATAM') {
+                if (!d.img_form) d.img_form = obterImagemMinuta(minutaObj, 'FORM') || undefined;
+                if (!d.img_awb) d.img_awb = obterImagemMinuta(minutaObj, 'AWB') || undefined;
+                if (!d.doc_excel_b64) d.doc_excel_b64 = lerSessionSeguro(`minuta_excel_latam_${destBruto}`, opEscopo) || undefined;
+                if (ehFormal && !d.doc_formal_pdf_b64) {
+                    d.doc_formal_pdf_b64 = obterPdfFormalMinuta(minutaObj) || undefined;
+                }
+            } else if (cia === 'GOL') {
+                if (!d.pdf_gol) d.pdf_gol = lerSessionSeguro(`minuta_pdf_gol_id_${minutaObj.id}`, opEscopo) || undefined;
+            }
+
             const jaCarregouDoBancoNestaSessao = (minutaObj._anexosBancoCarregadosId === minutaObj.id);
             const temTudoEmMemoria = (cia === 'LATAM' && d.img_form && d.img_awb && d.doc_excel_b64 && (!ehFormal || d.doc_formal_pdf_b64)) || (cia === 'GOL' && d.pdf_gol);
 
-            // 1. Consulta PRIMEIRO o Supabase pelo ID único da minuta (se ainda não consultou para este ID ou se forçado)
-            if (supabaseClient && minutaObj.id && (forcarConsultaBanco || !jaCarregouDoBancoNestaSessao || !temTudoEmMemoria)) {
+            if (supabaseClient && minutaObj.id && (forcarConsultaBanco || (!jaCarregouDoBancoNestaSessao && !temTudoEmMemoria))) {
                 try {
-                    const { data, error } = await supabaseClient.from('minutas').select('dados,operacao').eq('id', minutaObj.id).maybeSingle();
+                    const { data, error } = await supabaseClient.from('minutas').select('status,operador,dados,operacao').eq('id', minutaObj.id).maybeSingle();
                     if (!error && data && data.dados) {
                         const dbDados = data.dados;
+                        // Se no banco já consta CONCLUÍDA e localmente não foi forçado refazer, promove para CONCLUÍDA
+                        if (data.status === 'CONCLUÍDA' && !minutaObj._forcarReaberturaExplicita) {
+                            minutaObj.status = 'CONCLUÍDA';
+                        }
                         if ((!dbDados.captura_operacao_id || dbDados.captura_operacao_id === opEscopo) &&
                             (!dbDados.captura_minuta_id || dbDados.captura_minuta_id === minutaObj.id)) {
                             minutaObj._anexosBancoCarregadosId = minutaObj.id;
 
+                            // Preserva os metadados atuais em memória (status, awb, concluido_por, etc.) e mescla apenas anexos faltantes do banco
                             const merged = Object.assign({}, dbDados, minutaObj.dados);
                             if (minutaObj._capturaFormRejeitadaLocalmente) {
                                 delete merged.img_form;
-                            } else if (dbDados.img_form && !minutaObj._capturaLocalRecenteForm) {
-                                merged.img_form = dbDados.img_form;
-                            } else if (minutaObj.dados.img_form) {
+                            } else if (minutaObj.dados.img_form && minutaObj._capturaLocalRecenteForm) {
                                 merged.img_form = minutaObj.dados.img_form;
+                            } else if (dbDados.img_form) {
+                                merged.img_form = dbDados.img_form;
                             }
 
-                            if (dbDados.img_awb && !minutaObj._capturaLocalRecenteAwb) merged.img_awb = dbDados.img_awb;
-                            else if (minutaObj.dados.img_awb) merged.img_awb = minutaObj.dados.img_awb;
-
-                            if (dbDados.pdf_gol) merged.pdf_gol = dbDados.pdf_gol;
-                            if (dbDados.modo_manual_gol !== undefined && minutaObj.dados.modo_manual_gol === undefined) {
-                                merged.modo_manual_gol = dbDados.modo_manual_gol;
+                            if (minutaObj.dados.img_awb && minutaObj._capturaLocalRecenteAwb) {
+                                merged.img_awb = minutaObj.dados.img_awb;
+                            } else if (dbDados.img_awb) {
+                                merged.img_awb = dbDados.img_awb;
                             }
-                            if (dbDados.doc_excel_b64) merged.doc_excel_b64 = dbDados.doc_excel_b64;
-                            if (dbDados.doc_excel_nome) merged.doc_excel_nome = dbDados.doc_excel_nome;
-                            if (dbDados.doc_formal_pdf_b64) merged.doc_formal_pdf_b64 = dbDados.doc_formal_pdf_b64;
-                            if (dbDados.doc_formal_pdf_nome) merged.doc_formal_pdf_nome = dbDados.doc_formal_pdf_nome;
-                            if (dbDados.formal_meta) merged.formal_meta = dbDados.formal_meta;
-                            if (dbDados.awb && String(dbDados.awb).trim() !== '' && (!minutaObj.dados.awb || !String(minutaObj.dados.awb).trim())) {
+
+                            if (minutaObj.dados.pdf_gol) merged.pdf_gol = minutaObj.dados.pdf_gol;
+                            else if (dbDados.pdf_gol) merged.pdf_gol = dbDados.pdf_gol;
+
+                            if (minutaObj.dados.doc_excel_b64) merged.doc_excel_b64 = minutaObj.dados.doc_excel_b64;
+                            else if (dbDados.doc_excel_b64) merged.doc_excel_b64 = dbDados.doc_excel_b64;
+
+                            if (minutaObj.dados.doc_excel_nome) merged.doc_excel_nome = minutaObj.dados.doc_excel_nome;
+                            else if (dbDados.doc_excel_nome) merged.doc_excel_nome = dbDados.doc_excel_nome;
+
+                            if (minutaObj.dados.doc_formal_pdf_b64) merged.doc_formal_pdf_b64 = minutaObj.dados.doc_formal_pdf_b64;
+                            else if (dbDados.doc_formal_pdf_b64) merged.doc_formal_pdf_b64 = dbDados.doc_formal_pdf_b64;
+
+                            if (minutaObj.dados.doc_formal_pdf_nome) merged.doc_formal_pdf_nome = minutaObj.dados.doc_formal_pdf_nome;
+                            else if (dbDados.doc_formal_pdf_nome) merged.doc_formal_pdf_nome = dbDados.doc_formal_pdf_nome;
+
+                            if (minutaObj.dados.formal_meta) merged.formal_meta = minutaObj.dados.formal_meta;
+                            else if (dbDados.formal_meta) merged.formal_meta = dbDados.formal_meta;
+
+                            // Nunca permite que dbDados antigo apague AWB ou concluido_por já preenchidos localmente
+                            if (minutaObj.dados.awb && String(minutaObj.dados.awb).trim() !== '') {
+                                merged.awb = minutaObj.dados.awb;
+                            } else if (dbDados.awb && String(dbDados.awb).trim() !== '' && !minutaObj._forcarReaberturaExplicita) {
                                 merged.awb = dbDados.awb;
                             }
+                            if (minutaObj.dados.concluido_por && String(minutaObj.dados.concluido_por).trim() !== '') {
+                                merged.concluido_por = minutaObj.dados.concluido_por;
+                            } else if (dbDados.concluido_por && !minutaObj._forcarReaberturaExplicita) {
+                                merged.concluido_por = dbDados.concluido_por;
+                            }
+                            if (minutaObj.dados.horario_conclusao && String(minutaObj.dados.horario_conclusao).trim() !== '') {
+                                merged.horario_conclusao = minutaObj.dados.horario_conclusao;
+                            } else if (dbDados.horario_conclusao && !minutaObj._forcarReaberturaExplicita) {
+                                merged.horario_conclusao = dbDados.horario_conclusao;
+                            }
+
+                            if (merged.img_form) merged.tem_img_form = true;
+                            if (merged.img_awb) merged.tem_img_awb = true;
+                            if (merged.pdf_gol) merged.tem_pdf_gol = true;
+                            if (merged.doc_formal_pdf_b64 || merged.doc_formal_pdf_nome) merged.tem_doc_formal = true;
+                            if (merged.doc_excel_b64 || merged.doc_excel_nome) merged.tem_doc_excel = true;
+
                             minutaObj.dados = merged;
 
                             if (merged.img_form) salvarSessionSeguro(`minuta_img_form_id_${minutaObj.id}`, merged.img_form, opEscopo);
@@ -1696,22 +1778,16 @@
                 } catch (e) {}
             }
 
-            // 2. Só usa o cache local se pertencer estritamente ao ID desta minuta e desta operação
-            if (cia === 'LATAM') {
-                if (!minutaObj.dados.img_form) minutaObj.dados.img_form = obterImagemMinuta(minutaObj, 'FORM') || undefined;
-                if (!minutaObj.dados.img_awb) minutaObj.dados.img_awb = obterImagemMinuta(minutaObj, 'AWB') || undefined;
-                if (!minutaObj.dados.doc_excel_b64) minutaObj.dados.doc_excel_b64 = lerSessionSeguro(`minuta_excel_latam_${destBruto}`, opEscopo) || undefined;
-                if (ehFormal && !minutaObj.dados.doc_formal_pdf_b64) {
-                    minutaObj.dados.doc_formal_pdf_b64 = obterPdfFormalMinuta(minutaObj) || undefined;
-                }
-            } else if (cia === 'GOL') {
-                if (!minutaObj.dados.pdf_gol) minutaObj.dados.pdf_gol = lerSessionSeguro(`minuta_pdf_gol_id_${minutaObj.id}`, opEscopo) || undefined;
-            }
+            if (minutaObj.dados.img_form) minutaObj.dados.tem_img_form = true;
+            if (minutaObj.dados.img_awb) minutaObj.dados.tem_img_awb = true;
+            if (minutaObj.dados.pdf_gol) minutaObj.dados.tem_pdf_gol = true;
+            if (minutaObj.dados.doc_formal_pdf_b64 || minutaObj.dados.doc_formal_pdf_nome) minutaObj.dados.tem_doc_formal = true;
+            if (minutaObj.dados.doc_excel_b64 || minutaObj.dados.doc_excel_nome) minutaObj.dados.tem_doc_excel = true;
 
             return minutaObj;
         }
 
-        // Atualiza uma minuta no Supabase de forma enfileirada por ID para evitar condição de corrida entre Captura Form e Captura AWB
+        // Atualiza uma minuta no Supabase de forma enfileirada por ID para evitar condição de corrida entre Captura Form, Captura AWB e Concluir Minuta
         async function salvarDadosMinutaPreservandoAnexos(minutaObj, extraTopFields = {}) {
             if (!supabaseClient || !minutaObj || !minutaObj.id) return;
             const idProt = minutaObj.id;
@@ -1721,12 +1797,17 @@
             const novaPromessa = anterior.then(async () => {
                 try {
                     await garantirAnexosMinutaNoCache(minutaObj, false);
-                    const payload = Object.assign({ dados: minutaObj.dados }, extraTopFields);
+                    const statusPersistir = extraTopFields.status || minutaObj.status || 'PENDENTE';
+                    const payload = Object.assign({ status: statusPersistir, dados: minutaObj.dados }, extraTopFields);
                     await supabaseClient.from('minutas').update(payload).eq('id', idProt);
                 } catch (e) {
                     console.error('Erro ao salvar minuta preservando anexos:', e);
                 } finally {
-                    liberarPendenciaSync(idProt);
+                    // Só libera a trava de sync quando a ÚLTIMA promessa da fila desta minuta terminar!
+                    if (filaSavesPorMinuta.get(idProt) === novaPromessa) {
+                        filaSavesPorMinuta.delete(idProt);
+                        liberarPendenciaSync(idProt);
+                    }
                 }
             });
             filaSavesPorMinuta.set(idProt, novaPromessa);
@@ -1735,7 +1816,7 @@
 
         async function sincronizarTudoComBanco(exibirAviso = false, forcarEstaticas = false) {
             if(!supabaseClient) return;
-            if(!exibirAviso && (syncEmAndamento || pendentesSyncIds.size > 0)) return;
+            if(!exibirAviso && syncEmAndamento) return;
             syncEmAndamento = true;
             if(exibirAviso) showToast('Sincronizando de forma otimizada...');
             try {
@@ -1743,8 +1824,8 @@
 
                 // OTIMIZAÇÃO CRÍTICA DE EGRESS:
                 // Usa projeção JSONB do PostgREST para NUNCA trafegar img_form, img_awb, pdf_gol ou doc_excel_b64 nas listagens periódicas!
-                // Reduz o tráfego de ~15 MB por consulta para ~3 KB (99,9% de economia de Egress)!
-                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,aguardando_cte_contingencia:dados->aguardando_cte_contingencia,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
+                // Inclui flags leves de presença de anexos (tem_img_form, tem_img_awb, tem_pdf_gol, tem_doc_formal) para atualizar os botões de relatório em tempo real sem baixar megabytes!
+                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,aguardando_cte_contingencia:dados->aguardando_cte_contingencia,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,tem_img_form:dados->tem_img_form,tem_img_awb:dados->tem_img_awb,tem_pdf_gol:dados->tem_pdf_gol,tem_doc_formal:dados->tem_doc_formal,tem_doc_excel:dados->tem_doc_excel,auditoria_ia_latam_form:dados->auditoria_ia_latam_form,auditoria_ia_gol:dados->auditoria_ia_gol,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
 
                 const promessas = [
                     supabaseClient.from('operacoes').select('*').order('criado_em', { ascending: false }),
@@ -1799,25 +1880,33 @@
                         renderLogin();
                         if (!document.getElementById('usuarios-view')?.classList.contains('hidden')) renderUsuariosAdmin();
                     }
-                    if (resOps.error) {
-                        const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
-                        if (opRows.length > 0) {
+                    // Mescla também operações registradas em __SYS_OP__ (garante suporte a múltiplas operações ativas sem conflito)
+                    const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
+                    if (opRows.length > 0) {
+                        if (resOps.error) {
                             operacoesAtivasDb = []; historicoOperacoes = [];
-                            for (const op of opRows) {
-                                const finalizadoEm = op.finalizado_em ? Number(op.finalizado_em) : null;
-                                if (op.status === 'FINALIZADA') {
-                                    if (!finalizadoEm || (agora - finalizadoEm <= limite48h)) {
-                                        historicoOperacoes.push({ id: op.id, nome: op.operacao, criado_por: op.operador, finalizado_em: finalizadoEm });
-                                    } else if (op.operacao) {
-                                        supabaseClient.from('minutas').delete().eq('operacao', op.operacao).then(()=>{});
-                                        supabaseClient.from('minutas').delete().eq('id', op.id).then(()=>{});
+                        }
+                        for (const op of opRows) {
+                            const nomeOpRow = op.operacao;
+                            if (!nomeOpRow) continue;
+                            const finalizadoEm = op.finalizado_em ? Number(op.finalizado_em) : null;
+                            if (op.status === 'FINALIZADA') {
+                                operacoesAtivasDb = operacoesAtivasDb.filter(o => o.nome !== nomeOpRow);
+                                if (!finalizadoEm || (agora - finalizadoEm <= limite48h)) {
+                                    if (!historicoOperacoes.some(h => h.nome === nomeOpRow)) {
+                                        historicoOperacoes.push({ id: op.id, nome: nomeOpRow, criado_por: op.operador, finalizado_em: finalizadoEm });
                                     }
                                 } else {
-                                    operacoesAtivasDb.push({ id: op.id, nome: op.operacao, criado_por: op.operador });
+                                    supabaseClient.from('minutas').delete().eq('operacao', nomeOpRow).then(()=>{});
+                                    supabaseClient.from('minutas').delete().eq('id', op.id).then(()=>{});
+                                }
+                            } else {
+                                if (!historicoOperacoes.some(h => h.nome === nomeOpRow) && !operacoesAtivasDb.some(o => o.nome === nomeOpRow)) {
+                                    operacoesAtivasDb.push({ id: op.id, nome: nomeOpRow, criado_por: op.operador });
                                 }
                             }
-                            salvarCacheOperacoes();
                         }
+                        salvarCacheOperacoes();
                     }
 
                     const pacotesAereo = rows.filter(r => r.id && String(r.id).startsWith('__SYS_AEREO_SYNC__') && r.status === 'PENDENTE');
@@ -1826,11 +1915,36 @@
 
                     minutasDb = remotas.map(rem => {
                         const loc = mapaLocal.get(rem.id);
-                        if (loc && estaComSyncProtegido(rem.id)) return loc;
+                        if (loc && (estaComSyncProtegido(rem.id) || filaSavesPorMinuta.has(rem.id))) return loc;
 
-                        const awbRem = (rem.awb !== null && rem.awb !== undefined && String(rem.awb).trim() !== '') ? rem.awb : (loc?.dados?.awb || '');
-                        const modoManualRem = (rem.modo_manual_gol !== null && rem.modo_manual_gol !== undefined) ? Boolean(rem.modo_manual_gol) : Boolean(loc?.dados?.modo_manual_gol);
-                        const awbPendRem = (rem.awb_pendente_manual !== null && rem.awb_pendente_manual !== undefined) ? Boolean(rem.awb_pendente_manual) : Boolean(loc?.dados?.awb_pendente_manual);
+                        // Se o banco diz PENDENTE, não herda awb/concluido_por velho de memória local a menos que tenha acabado de ser concluída localmente (< 45s)
+                        const recemConcluidaLocal = Boolean(loc && loc.status === 'CONCLUÍDA' && !loc._forcarReaberturaExplicita && loc._concluidaLocalTs && (Date.now() - loc._concluidaLocalTs < 45000));
+                        const remEhConcluida = (rem.status === 'CONCLUÍDA') || Boolean(rem.concluido_por && (rem.awb || rem.modo_manual_gol));
+
+                        const awbRem = (rem.awb !== null && rem.awb !== undefined && String(rem.awb).trim() !== '')
+                            ? rem.awb
+                            : (recemConcluidaLocal ? (loc?.dados?.awb || '') : '');
+                        const modoManualRem = (rem.modo_manual_gol !== null && rem.modo_manual_gol !== undefined)
+                            ? Boolean(rem.modo_manual_gol)
+                            : (recemConcluidaLocal ? Boolean(loc?.dados?.modo_manual_gol) : false);
+                        const awbPendRem = (rem.awb_pendente_manual !== null && rem.awb_pendente_manual !== undefined)
+                            ? Boolean(rem.awb_pendente_manual)
+                            : (recemConcluidaLocal ? Boolean(loc?.dados?.awb_pendente_manual) : false);
+                        const agCteRem = (rem.aguardando_cte_contingencia !== null && rem.aguardando_cte_contingencia !== undefined)
+                            ? Boolean(rem.aguardando_cte_contingencia)
+                            : (recemConcluidaLocal ? Boolean(loc?.dados?.aguardando_cte_contingencia) : false);
+                        const concluidoPorRem = rem.concluido_por || (recemConcluidaLocal ? (loc?.dados?.concluido_por || '') : '');
+                        const horarioConcRem = rem.horario_conclusao || (recemConcluidaLocal ? (loc?.dados?.horario_conclusao || '') : '');
+
+                        let statusFinal = rem.status || 'PENDENTE';
+                        if (remEhConcluida || recemConcluidaLocal) {
+                            statusFinal = 'CONCLUÍDA';
+                            if (rem.status !== 'CONCLUÍDA' && supabaseClient) {
+                                // Auto-cura no banco se algum evento concorrente tiver rebaixado o status de uma minuta já concluída
+                                supabaseClient.from('minutas').update({ status: 'CONCLUÍDA' }).eq('id', rem.id).then(()=>{});
+                            }
+                        }
+
                         const dadosMontados = Object.assign({}, (loc && loc.dados) ? loc.dados : {}, {
                             BLOCO_ID: (rem.BLOCO_ID !== null && rem.BLOCO_ID !== undefined && String(rem.BLOCO_ID).trim() !== '') ? rem.BLOCO_ID : (loc?.dados?.BLOCO_ID || ''),
                             LACRE_ORIGINAL: (rem.LACRE_ORIGINAL !== null && rem.LACRE_ORIGINAL !== undefined && String(rem.LACRE_ORIGINAL).trim() !== '') ? rem.LACRE_ORIGINAL : (loc?.dados?.LACRE_ORIGINAL || ''),
@@ -1838,26 +1952,33 @@
                             awb: awbRem,
                             modo_manual_gol: modoManualRem,
                             awb_pendente_manual: awbRem ? false : awbPendRem,
-                            concluido_por: rem.concluido_por || loc?.dados?.concluido_por || '',
-                            horario_conclusao: rem.horario_conclusao || loc?.dados?.horario_conclusao || '',
+                            aguardando_cte_contingencia: awbRem ? false : agCteRem,
+                            concluido_por: concluidoPorRem,
+                            horario_conclusao: horarioConcRem,
                             doc_excel_nome: rem.doc_excel_nome || loc?.dados?.doc_excel_nome || undefined,
                             doc_formal_pdf_nome: rem.doc_formal_pdf_nome || loc?.dados?.doc_formal_pdf_nome || undefined,
+                            tem_img_form: Boolean(rem.tem_img_form || loc?.dados?.tem_img_form || loc?.dados?.img_form || (statusFinal === 'CONCLUÍDA' && (rem.cia || '').toUpperCase() === 'LATAM')),
+                            tem_img_awb: Boolean(rem.tem_img_awb || loc?.dados?.tem_img_awb || loc?.dados?.img_awb || (statusFinal === 'CONCLUÍDA' && (rem.cia || '').toUpperCase() === 'LATAM')),
+                            tem_pdf_gol: Boolean(rem.tem_pdf_gol || loc?.dados?.tem_pdf_gol || loc?.dados?.pdf_gol || modoManualRem || (statusFinal === 'CONCLUÍDA' && (rem.cia || '').toUpperCase() === 'GOL')),
+                            tem_doc_formal: Boolean(rem.tem_doc_formal || loc?.dados?.tem_doc_formal || rem.doc_formal_pdf_nome || loc?.dados?.doc_formal_pdf_b64),
+                            tem_doc_excel: Boolean(rem.tem_doc_excel || loc?.dados?.tem_doc_excel || rem.doc_excel_nome || loc?.dados?.doc_excel_b64),
+                            auditoria_ia_latam_form: rem.auditoria_ia_latam_form || loc?.dados?.auditoria_ia_latam_form || undefined,
+                            auditoria_ia_gol: rem.auditoria_ia_gol || loc?.dados?.auditoria_ia_gol || undefined,
                             formal_meta: rem.formal_meta || loc?.dados?.formal_meta || undefined,
                             remessa: rem.remessa || loc?.dados?.remessa || {}
                         });
 
                         const objMinuta = {
                             id: rem.id,
-                            destino: rem.destino,
+                            destino: normalizarNomeDestinoDg(rem.destino),
                             cia: rem.cia,
                             operador: rem.operador,
-                            status: rem.status,
+                            status: statusFinal,
                             operacao: rem.operacao,
+                            _concluidaLocalTs: loc?._concluidaLocalTs || (statusFinal === 'CONCLUÍDA' ? Date.now() : 0),
                             dados: dadosMontados
                         };
-                        if (normalizarObjetoMinutaDg(objMinuta) && supabaseClient) {
-                            salvarDadosMinutaPreservandoAnexos(objMinuta, { destino: objMinuta.destino });
-                        }
+                        normalizarObjetoMinutaDg(objMinuta);
                         return objMinuta;
                     });
 
@@ -1912,8 +2033,14 @@
                 }
 
                 const opSalvaLocal = localStorage.getItem('sistema_aereo_op_atual');
-                if (opSalvaLocal && operacoesAtivasDb.some(o => o.nome === opSalvaLocal)) { operacaoAtual = opSalvaLocal; document.getElementById('active-op-badge').textContent = operacaoAtual; } 
-                else if (operacaoAtual && !operacoesAtivasDb.some(o => o.nome === operacaoAtual)) { operacaoAtual = ''; localStorage.removeItem('sistema_aereo_op_atual'); document.getElementById('active-op-badge').textContent = 'Sem Operação'; }
+                if (opSalvaLocal && operacoesAtivasDb.some(o => o.nome === opSalvaLocal)) {
+                    operacaoAtual = opSalvaLocal;
+                    document.getElementById('active-op-badge').textContent = operacaoAtual;
+                } else if (operacaoAtual && historicoOperacoes.some(h => h.nome === operacaoAtual)) {
+                    operacaoAtual = '';
+                    localStorage.removeItem('sistema_aereo_op_atual');
+                    document.getElementById('active-op-badge').textContent = 'Sem Operação';
+                }
 
                 if(resMalha && !resMalha.error && resMalha.data) { malhaDb = resMalha.data; try{localStorage.setItem('cache_malha', JSON.stringify(malhaDb));}catch(e){} notificarMalhaAtualizadaSistemaAereo(); }
                 if(resBases && !resBases.error && resBases.data) { basesDb = resBases.data; try{localStorage.setItem('cache_bases', JSON.stringify(basesDb));}catch(e){} }
@@ -1938,12 +2065,11 @@
                     }
                 }
 
-
-
                 if(!document.getElementById('workspace-view').classList.contains('hidden')) renderWorkspace();
-                if(!document.getElementById('dashboard-view').classList.contains('hidden')) renderDashboard();
+                if(!document.getElementById('dashboard-view').classList.contains('hidden')) { renderDashboard(); renderCardsRelatorios(); }
                 if(!document.getElementById('detail-view').classList.contains('hidden') && minutaAberta) atualizarUICapturasMinutaAberta();
                 if(!document.getElementById('config-view').classList.contains('hidden')) { renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig(); }
+                if(!document.getElementById('modal-finalizadas').classList.contains('hidden')) abrirModalFinalizadas();
                 if(exibirAviso) showToast('Sincronizado com o banco!');
             } catch(e) { console.error("Erro sincronização:", e); }
             finally { syncEmAndamento = false; }
@@ -2637,6 +2763,7 @@
                     </div>`;
                 }).join('');
             }
+            renderCardsRelatorios();
             if(window.lucide && document.getElementById('dashboard-view').classList.contains('hidden') === false) lucide.createIcons();
         }
 
@@ -2689,11 +2816,9 @@
         window.abrirMinuta = async function(id) {
             limparChavesSemEscopoNoSessionStorage();
             minutaAberta = minutasDb.find(m => m.id === id); if(!minutaAberta) return;
-            if (normalizarObjetoMinutaDg(minutaAberta) && supabaseClient) {
-                salvarDadosMinutaPreservandoAnexos(minutaAberta, { destino: minutaAberta.destino });
-            }
+            normalizarObjetoMinutaDg(minutaAberta);
             registrarAlvoCapturaLatam(minutaAberta);
-            await garantirAnexosMinutaNoCache(minutaAberta, true);
+            // NÃO baixa imagens/PDFs pesados do banco ao abrir a minuta (Lazy Load estrito somente ao clicar em Visualizar!)
             if ((minutaAberta.cia || '').toUpperCase() === 'GOL') {
                 const baseDestino = buscarBasePorDestino(minutaAberta.destino);
                 if (!baseDestino) {
@@ -2701,11 +2826,16 @@
                     return;
                 }
             }
-            if (minutaAberta.status === 'PENDENTE') {
+            const jaTemConclusao = Boolean(minutaAberta.status === 'CONCLUÍDA' || (minutaAberta.dados?.concluido_por && (minutaAberta.dados?.awb || minutaAberta.dados?.modo_manual_gol)));
+            if (jaTemConclusao && minutaAberta.status !== 'CONCLUÍDA') {
+                minutaAberta.status = 'CONCLUÍDA';
+            } else if (minutaAberta.status === 'PENDENTE' && !jaTemConclusao) {
                 minutaAberta.status = 'EM PREENCHIMENTO';
                 registrarPendenciaSync(id);
+                notificarMudancaStatusMinutaTempoReal(minutaAberta, 'EM_PREENCHIMENTO');
                 if(supabaseClient) {
-                    supabaseClient.from('minutas').update({ status: 'EM PREENCHIMENTO' }).eq('id', id).then(() => liberarPendenciaSync(id));
+                    // Trava .eq('status', 'PENDENTE') garante que o banco JAMAIS rebaixe uma minuta já CONCLUÍDA por outro operador!
+                    supabaseClient.from('minutas').update({ status: 'EM PREENCHIMENTO' }).eq('id', id).eq('status', 'PENDENTE').then(() => liberarPendenciaSync(id));
                 }
             }
             document.getElementById('dashboard-view').classList.add('hidden'); document.getElementById('detail-view').classList.remove('hidden');
@@ -2736,22 +2866,24 @@
             if (minutaAberta.cia === 'LATAM') {
                 const imgForm = obterImagemMinuta(minutaAberta, 'FORM');
                 const imgAwb  = obterImagemMinuta(minutaAberta, 'AWB');
+                const temFormDisp = minutaPossuiCapturaLatam(minutaAberta, 'FORM');
+                const temAwbDisp  = minutaPossuiCapturaLatam(minutaAberta, 'AWB');
                 const excelLatam = obterExcelLatamMinuta(minutaAberta);
+                const temExcelDisp = minutaPossuiExcelLatam(minutaAberta);
                 const nomeExcelSalvo = (minutaAberta.dados && minutaAberta.dados.doc_excel_nome) ? minutaAberta.dados.doc_excel_nome : `${destBruto}.xlsx`;
 
-                // Nunca regrava imgForm/imgAwb ao apenas abrir a minuta (evita copiar cache 3 letras antigo sobre a chave de 4 letras)
                 if (excelLatam) salvarSessionSeguro(`minuta_excel_latam_${destBruto}`, excelLatam);
 
-                const btnFormCls = imgForm ? 'bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
-                const btnFormTxt = imgForm ? '👀 Visualizar Formulário' : '⏳ Form. Pendente';
-                const btnFormClick = imgForm ? `onclick="abrirModalImagemPorDestino('${iata3}', '${destBruto}', 'FORM')"` : 'disabled';
+                const btnFormCls = temFormDisp ? 'bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
+                const btnFormTxt = temFormDisp ? '👀 Visualizar Formulário' : '⏳ Form. Pendente';
+                const btnFormClick = temFormDisp ? `onclick="abrirModalImagemPorDestino('${iata3}', '${destBruto}', 'FORM')"` : 'disabled';
 
-                const btnAwbCls = imgAwb ? 'bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
-                const btnAwbTxt = imgAwb ? '👀 Visualizar AWB' : '⏳ AWB Pendente';
-                const btnAwbClick = imgAwb ? `onclick="abrirModalImagemPorDestino('${iata3}', '${destBruto}', 'AWB')"` : 'disabled';
+                const btnAwbCls = temAwbDisp ? 'bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
+                const btnAwbTxt = temAwbDisp ? '👀 Visualizar AWB' : '⏳ AWB Pendente';
+                const btnAwbClick = temAwbDisp ? `onclick="abrirModalImagemPorDestino('${iata3}', '${destBruto}', 'AWB')"` : 'disabled';
 
-                const badgeExcelTxt = excelLatam ? `✅ Doc. Internacional (${nomeExcelSalvo})` : '⚠️ Planilha ZIP não importada';
-                const badgeExcelCls = excelLatam ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300';
+                const badgeExcelTxt = temExcelDisp ? `✅ Doc. Internacional (${nomeExcelSalvo})` : '⚠️ Planilha ZIP não importada';
+                const badgeExcelCls = temExcelDisp ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300';
 
                 container.innerHTML += `
                 <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4">
@@ -2791,11 +2923,12 @@
                     : '';
 
                 const ehModoManualGol = Boolean(minutaAberta.dados && minutaAberta.dados.modo_manual_gol);
-                const btnPreviaGolCls = pdfGolSalvo ? 'bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
-                const btnPreviaGolTxt = pdfGolSalvo
+                const temPdfGolDisp = minutaPossuiPdfGol(minutaAberta);
+                const btnPreviaGolCls = temPdfGolDisp ? 'bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed';
+                const btnPreviaGolTxt = temPdfGolDisp
                     ? (ehModoManualGol ? '👀 Visualizar Minuta Manual' : '👀 Visualizar PDF (Com Lacre)')
                     : '⏳ PDF Pendente';
-                const btnPreviaGolClick = pdfGolSalvo ? `onclick="abrirModalPreviaPdfGol()"` : 'disabled';
+                const btnPreviaGolClick = temPdfGolDisp ? `onclick="abrirModalPreviaPdfGol()"` : 'disabled';
 
                 const bannerModoManual = ehModoManualGol
                     ? `<div class="mx-5 mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-semibold flex flex-wrap items-center justify-between gap-3">
@@ -3486,7 +3619,7 @@
         }
 
         let _ultimoDisparoAutoFillLatamTs = 0;
-        window.abrirPortalLatamAutoFill = function() {
+        window.abrirPortalLatamAutoFill = async function() {
             if (!minutaAberta) return;
             const agoraTs = Date.now();
             if (agoraTs - _ultimoDisparoAutoFillLatamTs < 1200) return;
@@ -3494,6 +3627,9 @@
 
             normalizarObjetoMinutaDg(minutaAberta);
             registrarAlvoCapturaLatam(minutaAberta);
+            if (!obterExcelLatamMinuta(minutaAberta) && supabaseClient) {
+                await garantirAnexosMinutaNoCache(minutaAberta, true);
+            }
             const d = aplicarRegrasMalhaEInjetarBases(minutaAberta);
             const origemRaw = (d.remessa.Origem || 'GRU').toString().trim().toUpperCase();
             const origem = encodeURIComponent(origemRaw);
@@ -4164,6 +4300,7 @@
             if (idx !== -1) {
                 if (!minutasDb[idx].dados) minutasDb[idx].dados = {};
                 minutasDb[idx].dados.pdf_gol = pdfDataUriEditado;
+                minutasDb[idx].dados.tem_pdf_gol = true;
                 minutasDb[idx].dados.modo_manual_gol = Boolean(dadosPdf.ehAcroFormManual);
                 minutasDb[idx].dados.awb_pendente_manual = Boolean(dadosPdf.ehAcroFormManual && !cte);
                 minutasDb[idx].dados.captura_operacao_id = opEscopo;
@@ -4180,6 +4317,7 @@
                 };
                 minutaAberta = minutasDb[idx];
 
+                notificarMudancaStatusMinutaTempoReal(minutasDb[idx], 'PDF_GOL');
                 if (supabaseClient) {
                     await salvarDadosMinutaPreservandoAnexos(minutasDb[idx]);
                 }
@@ -4332,9 +4470,14 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             event.target.value = '';
         };
 
-        window.abrirModalPreviaPdfGol = function() {
+        window.abrirModalPreviaPdfGol = async function() {
             if (!minutaAberta) return;
-            const pdfDataUri = obterPdfGolMinuta(minutaAberta);
+            let pdfDataUri = obterPdfGolMinuta(minutaAberta);
+            if (!pdfDataUri && supabaseClient) {
+                showToast('Carregando PDF GOL do banco...');
+                await garantirAnexosMinutaNoCache(minutaAberta, true);
+                pdfDataUri = obterPdfGolMinuta(minutaAberta);
+            }
             if (!pdfDataUri) {
                 showToast('Nenhum PDF GOL anexado nesta minuta.');
                 return;
@@ -4391,6 +4534,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             if(minutaAberta) {
                 const ehLatam = (minutaAberta.cia || '').toUpperCase() === 'LATAM';
                 if (ehLatam) {
+                    if ((!obterImagemMinuta(minutaAberta, 'FORM') || !obterImagemMinuta(minutaAberta, 'AWB')) && supabaseClient) {
+                        await garantirAnexosMinutaNoCache(minutaAberta, true);
+                    }
                     const imgFormPre = obterImagemMinuta(minutaAberta, 'FORM');
                     if (!imgFormPre) {
                         if (minutaAberta._capturaFormInvalidaMotivo) {
@@ -4466,6 +4612,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 }
 
                 if (ehGol) {
+                    if (!obterPdfGolMinuta(minutaAberta) && supabaseClient) {
+                        await garantirAnexosMinutaNoCache(minutaAberta, true);
+                    }
                     const pdfGolAtual = obterPdfGolMinuta(minutaAberta);
                     if (!pdfGolAtual) {
                         abrirModalSistema("PDF Obrigatório 📄", "Anexe o PDF da Minuta gerado no site da GOLLOG ou clique em 'Minuta Manual' antes de concluir esta minuta.");
@@ -4502,30 +4651,35 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 registrarPendenciaSync(idMinuta);
 
                 const idx = minutasDb.findIndex(m => m.id === idMinuta);
-                if (idx !== -1) {
-                    minutasDb[idx].status = 'CONCLUÍDA';
-                    if (!minutasDb[idx].dados) minutasDb[idx].dados = {};
-                    minutasDb[idx].dados.awb = val;
-                    if (ehManualGol) {
-                        minutasDb[idx].dados.modo_manual_gol = true;
-                        minutasDb[idx].dados.awb_pendente_manual = !val;
-                        minutasDb[idx].dados.aguardando_cte_contingencia = !val;
-                    }
-                    minutasDb[idx].dados.concluido_por = quemConcluiu;
-                    minutasDb[idx].dados.horario_conclusao = horario;
-
-                    if ((minutaAberta.cia || '').toUpperCase() === 'LATAM') {
-                        const imgF = obterImagemMinuta(minutaAberta, 'FORM');
-                        const imgA = obterImagemMinuta(minutaAberta, 'AWB');
-                        if (imgF) minutasDb[idx].dados.img_form = imgF;
-                        if (imgA) minutasDb[idx].dados.img_awb = imgA;
-                    } else if ((minutaAberta.cia || '').toUpperCase() === 'GOL') {
-                        const pdfG = obterPdfGolMinuta(minutaAberta);
-                        if (pdfG) minutasDb[idx].dados.pdf_gol = pdfG;
-                    }
+                const alvoSalvar = idx !== -1 ? minutasDb[idx] : minutaAberta;
+                alvoSalvar.status = 'CONCLUÍDA';
+                alvoSalvar._concluidaLocalTs = Date.now();
+                alvoSalvar._forcarReaberturaExplicita = false;
+                if (!alvoSalvar.dados) alvoSalvar.dados = {};
+                alvoSalvar.dados.awb = val;
+                if (ehManualGol) {
+                    alvoSalvar.dados.modo_manual_gol = true;
+                    alvoSalvar.dados.awb_pendente_manual = !val;
+                    alvoSalvar.dados.aguardando_cte_contingencia = !val;
                 }
+                alvoSalvar.dados.concluido_por = quemConcluiu;
+                alvoSalvar.dados.horario_conclusao = horario;
 
-                const dadosParaSalvar = idx !== -1 ? minutasDb[idx].dados : minutaAberta.dados;
+                if ((minutaAberta.cia || '').toUpperCase() === 'LATAM') {
+                    const imgF = obterImagemMinuta(minutaAberta, 'FORM');
+                    const imgA = obterImagemMinuta(minutaAberta, 'AWB');
+                    if (imgF) alvoSalvar.dados.img_form = imgF;
+                    if (imgA) alvoSalvar.dados.img_awb = imgA;
+                    alvoSalvar.dados.tem_img_form = true;
+                    alvoSalvar.dados.tem_img_awb = true;
+                } else if ((minutaAberta.cia || '').toUpperCase() === 'GOL') {
+                    const pdfG = obterPdfGolMinuta(minutaAberta);
+                    if (pdfG) alvoSalvar.dados.pdf_gol = pdfG;
+                    alvoSalvar.dados.tem_pdf_gol = true;
+                }
+                if (ehMinutaFormal(alvoSalvar)) {
+                    alvoSalvar.dados.tem_doc_formal = true;
+                }
 
                 document.getElementById('detail-view').classList.add('hidden');
                 document.getElementById('dashboard-view').classList.remove('hidden');
@@ -4534,13 +4688,17 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 renderCardsRelatorios();
                 showToast(ehManualGol && !val ? '⏳ Minuta GOL em Contingência concluída! Controle Operacional avisado (Aguardando CT-e).' : 'Minuta concluída!');
 
+                // 1. Notifica TODOS os usuários conectados em tempo real (< 100ms) sem trafegar imagens!
+                notificarMudancaStatusMinutaTempoReal(alvoSalvar, 'CONCLUIDA');
+
                 if (val) {
-                    notificarAwbTempoRealSistemaAereo(idx !== -1 ? minutasDb[idx] : minutaAberta, val);
+                    notificarAwbTempoRealSistemaAereo(alvoSalvar, val);
                 } else if (ehManualGol) {
-                    notificarAwbTempoRealSistemaAereo(idx !== -1 ? minutasDb[idx] : minutaAberta, 'AGUARDANDO_CTE');
+                    notificarAwbTempoRealSistemaAereo(alvoSalvar, 'AGUARDANDO_CTE');
                 }
                 if(supabaseClient) {
-                    const alvoSalvar = idx !== -1 ? minutasDb[idx] : minutaAberta;
+                    // 2. Grava imediatamente o status CONCLUÍDA na coluna top-level do banco (sem esperar upload de imagem) e enfileira os dados completos
+                    supabaseClient.from('minutas').update({ status: 'CONCLUÍDA' }).eq('id', idMinuta).then(() => {});
                     salvarDadosMinutaPreservandoAnexos(alvoSalvar, { status: 'CONCLUÍDA' });
                 } else {
                     liberarPendenciaSync(idMinuta);
@@ -4769,16 +4927,16 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
                 let semArquivo = [];
                 if (g.id === 'FORMAL_GRU') {
-                    semArquivo = g.lista.filter(m => !obterImagemMinuta(m, 'FORM') || !obterImagemMinuta(m, 'AWB') || !obterPdfFormalMinuta(m));
+                    semArquivo = g.lista.filter(m => !minutaPossuiCapturaLatam(m, 'FORM') || !minutaPossuiCapturaLatam(m, 'AWB') || !minutaPossuiPdfFormal(m));
                 } else if (g.cia === 'LATAM') {
-                    semArquivo = g.lista.filter(m => !obterImagemMinuta(m, 'FORM') || !obterImagemMinuta(m, 'AWB'));
+                    semArquivo = g.lista.filter(m => !minutaPossuiCapturaLatam(m, 'FORM') || !minutaPossuiCapturaLatam(m, 'AWB'));
                 } else {
-                    semArquivo = g.lista.filter(m => !obterPdfGolMinuta(m));
+                    semArquivo = g.lista.filter(m => !minutaPossuiPdfGol(m));
                 }
 
                 if (concluidas === total && semArquivo.length === 0) {
                     const qtdSemAwbManual = g.cia === 'GOL'
-                        ? g.lista.filter(m => m.dados?.modo_manual_gol && (!m.dados?.awb || !String(m.dados.awb).trim())).length
+                        ? g.lista.filter(m => m.dados?.modo_manual_gol && (!m.dados?.awb || !String(m.dados.awb).trim() || String(m.dados.awb).trim().toUpperCase() === 'AGUARDANDO_CTE')).length
                         : 0;
                     const txtPronto = qtdSemAwbManual > 0
                         ? `Pronto (${total}) • ${qtdSemAwbManual} c/ AWB Pendente`
@@ -4800,7 +4958,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
                 let subtitulo = `Pendente: ${concluidas}/${total} concluídas`;
                 if (concluidas === total && semArquivo.length > 0) {
-                    if (g.id === 'FORMAL_GRU' && !obterPdfFormalMinuta(semArquivo[0])) {
+                    if (g.id === 'FORMAL_GRU' && !minutaPossuiPdfFormal(semArquivo[0])) {
                         subtitulo = `⚠️ Falta PDF Formal (${semArquivo[0].destino})`;
                     } else {
                         subtitulo = g.cia === 'LATAM'
@@ -5271,13 +5429,21 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     delete m.dados.img_form;
                     delete m.dados.img_awb;
                     delete m.dados.pdf_gol;
+                    delete m.dados.tem_img_form;
+                    delete m.dados.tem_img_awb;
+                    delete m.dados.tem_pdf_gol;
                     delete m.dados.peso_pdf_editado;
                     delete m.dados.modo_manual_gol;
                     delete m.dados.awb_pendente_manual;
+                    delete m.dados.aguardando_cte_contingencia;
                     m.dados.awb = '';
                     m.dados.concluido_por = '';
                     m.dados.horario_conclusao = '';
                     m.status = 'PENDENTE';
+                    m._concluidaLocalTs = 0;
+                    m._forcarReaberturaExplicita = true;
+
+                    notificarMudancaStatusMinutaTempoReal(m, 'REFAZER');
 
                     if (supabaseClient) {
                         const idProt = m.id;
@@ -5611,6 +5777,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     switchMainTab('PAINEL');
                     showToast("Minutas redistribuídas com equilíbrio de carga!");
 
+                    minutasAlteradas.forEach(m => notificarMudancaStatusMinutaTempoReal(m, 'REDISTRIBUICAO'));
                     if(supabaseClient && minutasAlteradas.length > 0) {
                         Promise.all(
                             minutasAlteradas.map(m => supabaseClient.from('minutas').update({ operador: m.operador }).eq('id', m.id))
@@ -5681,11 +5848,122 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 abrirModalFinalizadas();
             }
 
+            notificarMudancaStatusMinutaTempoReal(alvo, 'CTE_AUTO');
             if (supabaseClient) {
                 await salvarDadosMinutaPreservandoAnexos(alvo, { status: alvo.status });
             }
             if (!jaTinhaMesmoAwb) {
                 showToast(`⚡ AWB / CT-e ${awbLimpo} recebido automaticamente do Controle Operacional para ${alvo.destino}!`);
+            }
+        }
+
+        let _debounceRealtimeDbTimer = null;
+        function agendarSyncLeveTempoReal() {
+            if (_debounceRealtimeDbTimer) clearTimeout(_debounceRealtimeDbTimer);
+            _debounceRealtimeDbTimer = setTimeout(() => {
+                sincronizarTudoComBanco(false, false);
+            }, 350);
+        }
+
+        function notificarMudancaStatusMinutaTempoReal(minuta, acao = 'STATUS') {
+            if (!minuta || !minuta.id) return;
+            const d = minuta.dados || {};
+            const evento = {
+                type: 'MINUTA_STATUS_REALTIME',
+                acao: acao,
+                id: minuta.id,
+                operacao: minuta.operacao || operacaoAtual || '',
+                destino: minuta.destino || '',
+                cia: minuta.cia || '',
+                status: minuta.status || 'PENDENTE',
+                operador: minuta.operador || 'EQUIPE',
+                awb: d.awb || '',
+                concluido_por: d.concluido_por || '',
+                horario_conclusao: d.horario_conclusao || '',
+                modo_manual_gol: Boolean(d.modo_manual_gol),
+                awb_pendente_manual: Boolean(d.awb_pendente_manual),
+                aguardando_cte_contingencia: Boolean(d.aguardando_cte_contingencia),
+                tem_img_form: Boolean(d.tem_img_form || d.img_form || (minuta.status === 'CONCLUÍDA' && (minuta.cia || '').toUpperCase() === 'LATAM')),
+                tem_img_awb: Boolean(d.tem_img_awb || d.img_awb || (minuta.status === 'CONCLUÍDA' && (minuta.cia || '').toUpperCase() === 'LATAM')),
+                tem_pdf_gol: Boolean(d.tem_pdf_gol || d.pdf_gol || d.modo_manual_gol || (minuta.status === 'CONCLUÍDA' && (minuta.cia || '').toUpperCase() === 'GOL')),
+                tem_doc_formal: Boolean(d.tem_doc_formal || d.doc_formal_pdf_b64 || d.doc_formal_pdf_nome),
+                ts: Date.now()
+            };
+            try { localStorage.setItem('fedex_minutas_status_realtime_v1', JSON.stringify(evento)); } catch (e) {}
+            try { if (busLocalAereo) busLocalAereo.postMessage(evento); } catch (e) {}
+            try {
+                if (canalRealtimeAereo) {
+                    canalRealtimeAereo.send({ type: 'broadcast', event: 'MINUTA_STATUS_REALTIME', payload: evento });
+                }
+            } catch (e) {}
+        }
+
+        function aplicarEventoStatusMinutaTempoReal(data) {
+            if (!data || !data.id) return;
+            const idx = minutasDb.findIndex(m => m.id === data.id);
+            if (idx === -1) {
+                agendarSyncLeveTempoReal();
+                return;
+            }
+            const alvo = minutasDb[idx];
+            if (!alvo.dados) alvo.dados = {};
+
+            // Protege contra regressão acidental: se já está CONCLUÍDA localmente, só volta para PENDENTE se a ação for explicitamente REFAZER ou RESET_INCREMENTAL
+            if (alvo.status === 'CONCLUÍDA' && data.status !== 'CONCLUÍDA' && data.acao !== 'REFAZER' && data.acao !== 'RESET_INCREMENTAL') {
+                return;
+            }
+
+            if (data.status) alvo.status = data.status;
+            if (data.operador) alvo.operador = data.operador;
+
+            if (data.acao === 'REFAZER' || data.acao === 'RESET_INCREMENTAL') {
+                alvo._concluidaLocalTs = 0;
+                alvo._forcarReaberturaExplicita = true;
+                delete alvo.dados.img_form;
+                delete alvo.dados.img_awb;
+                delete alvo.dados.pdf_gol;
+                delete alvo.dados.tem_img_form;
+                delete alvo.dados.tem_img_awb;
+                delete alvo.dados.tem_pdf_gol;
+                alvo.dados.awb = '';
+                alvo.dados.concluido_por = '';
+                alvo.dados.horario_conclusao = '';
+                alvo.dados.modo_manual_gol = false;
+                alvo.dados.awb_pendente_manual = false;
+                alvo.dados.aguardando_cte_contingencia = false;
+            } else {
+                if (data.status === 'CONCLUÍDA') {
+                    alvo._concluidaLocalTs = Date.now();
+                    alvo._forcarReaberturaExplicita = false;
+                }
+                if (data.awb !== undefined && String(data.awb).trim() !== '') alvo.dados.awb = data.awb;
+                if (data.concluido_por !== undefined && String(data.concluido_por).trim() !== '') alvo.dados.concluido_por = data.concluido_por;
+                if (data.horario_conclusao !== undefined && String(data.horario_conclusao).trim() !== '') alvo.dados.horario_conclusao = data.horario_conclusao;
+                if (data.modo_manual_gol !== undefined) alvo.dados.modo_manual_gol = Boolean(data.modo_manual_gol);
+                if (data.awb_pendente_manual !== undefined) alvo.dados.awb_pendente_manual = Boolean(data.awb_pendente_manual);
+                if (data.aguardando_cte_contingencia !== undefined) alvo.dados.aguardando_cte_contingencia = Boolean(data.aguardando_cte_contingencia);
+                if (data.tem_img_form) alvo.dados.tem_img_form = true;
+                if (data.tem_img_awb) alvo.dados.tem_img_awb = true;
+                if (data.tem_pdf_gol) alvo.dados.tem_pdf_gol = true;
+                if (data.tem_doc_formal) alvo.dados.tem_doc_formal = true;
+            }
+
+            if (minutaAberta && minutaAberta.id === alvo.id) {
+                minutaAberta = alvo;
+                if (!document.getElementById('detail-view').classList.contains('hidden')) {
+                    atualizarUICapturasMinutaAberta(alvo.dados.awb || '');
+                }
+            }
+
+            if (!document.getElementById('dashboard-view').classList.contains('hidden')) {
+                renderDashboard();
+                renderCardsRelatorios();
+            }
+            if (!document.getElementById('config-view').classList.contains('hidden')) {
+                renderCardsRelatorios();
+            }
+            if (!document.getElementById('modal-finalizadas').classList.contains('hidden')) {
+                abrirModalFinalizadas();
             }
         }
 
@@ -5696,9 +5974,24 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     const data = ev.data;
                     if (!data) return;
                     if (data.type === 'MINUTAS_EXPORTADAS' && (!data.targetOpNome || data.targetOpNome === operacaoAtual)) {
-                        verificarPacotePendenteSistemaAereo();
+                        verificarPacotePendenteSistemaAereo(data.targetOpNome || operacaoAtual);
                     } else if (data.type === 'CTE_AWB_VINCULADA_CONTROLE') {
                         aplicarAwbCteRecebidaDoControle(data);
+                    } else if (data.type === 'MINUTA_STATUS_REALTIME') {
+                        aplicarEventoStatusMinutaTempoReal(data);
+                    } else if (data.type === 'AWB_AEREA_GERADA' && data.minuta_id) {
+                        aplicarEventoStatusMinutaTempoReal({
+                            id: data.minuta_id,
+                            operacao: data.operacao,
+                            destino: data.destino,
+                            cia: data.cia,
+                            status: 'CONCLUÍDA',
+                            awb: data.aguardando_cte ? '' : (data.awb_aereo || ''),
+                            modo_manual_gol: Boolean(data.modo_manual_gol),
+                            awb_pendente_manual: Boolean(data.aguardando_cte),
+                            aguardando_cte_contingencia: Boolean(data.aguardando_cte),
+                            acao: 'CONCLUIDA'
+                        });
                     }
                 };
             } catch (e) {}
@@ -5713,6 +6006,13 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                             parsed.items.forEach(it => aplicarAwbCteRecebidaDoControle(it));
                         }
                     } catch (e) {}
+                } else if (ev.key === 'fedex_minutas_status_realtime_v1' && ev.newValue) {
+                    try {
+                        const parsed = JSON.parse(ev.newValue);
+                        if (parsed && parsed.type === 'MINUTA_STATUS_REALTIME') {
+                            aplicarEventoStatusMinutaTempoReal(parsed);
+                        }
+                    } catch (e) {}
                 }
             });
 
@@ -5725,12 +6025,39 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     .on('broadcast', { event: 'MINUTAS_EXPORTADAS' }, (payload) => {
                         const data = payload.payload;
                         if (data && (!data.targetOpNome || data.targetOpNome === operacaoAtual)) {
-                            verificarPacotePendenteSistemaAereo();
+                            verificarPacotePendenteSistemaAereo(data.targetOpNome || operacaoAtual);
                         }
                     })
                     .on('broadcast', { event: 'CTE_AWB_VINCULADA_CONTROLE' }, (payload) => {
                         const data = payload.payload;
                         if (data) aplicarAwbCteRecebidaDoControle(data);
+                    })
+                    .on('broadcast', { event: 'MINUTA_STATUS_REALTIME' }, (payload) => {
+                        const data = payload.payload;
+                        if (data) aplicarEventoStatusMinutaTempoReal(data);
+                    })
+                    .on('broadcast', { event: 'AWB_AEREA_GERADA' }, (payload) => {
+                        const data = payload.payload;
+                        if (data && data.minuta_id) {
+                            aplicarEventoStatusMinutaTempoReal({
+                                id: data.minuta_id,
+                                operacao: data.operacao,
+                                destino: data.destino,
+                                cia: data.cia,
+                                status: 'CONCLUÍDA',
+                                awb: data.aguardando_cte ? '' : (data.awb_aereo || ''),
+                                modo_manual_gol: Boolean(data.modo_manual_gol),
+                                awb_pendente_manual: Boolean(data.aguardando_cte),
+                                aguardando_cte_contingencia: Boolean(data.aguardando_cte),
+                                acao: 'CONCLUIDA'
+                            });
+                        }
+                    })
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'minutas' }, (payload) => {
+                        const rec = payload.new || payload.old;
+                        if (rec && rec.id && !String(rec.id).startsWith('__SYS_')) {
+                            agendarSyncLeveTempoReal();
+                        }
                     })
                     .subscribe();
             } catch (e) {}
@@ -5837,6 +6164,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     } catch (e) { console.warn('Aviso ao ler zip_base64:', e); }
                 }
 
+                const opAlvoPacote = syncRow.operacao || syncRow.dados.target_op_nome || operacaoAtual;
                 const registrosLidos = [];
                 for (const row of rows) {
                     const cia = (row.CIA || '').toString().trim().toUpperCase();
@@ -5850,7 +6178,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                         if (row.DOC_EXCEL_NOME && /^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i.test(row.DOC_EXCEL_NOME)) {
                             row.DOC_EXCEL_NOME = String(row.DOC_EXCEL_NOME).replace(/^BSBA?\s+(?:CAIXAS?|SACAS?)\s+DG/i, 'BSBA DG');
                         }
-                        const id = `MIN_${operacaoAtual.replace(/[^a-zA-Z0-9]/g, '')}_${blocoIdNorm}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+                        const id = `MIN_${String(opAlvoPacote).replace(/[^a-zA-Z0-9]/g, '')}_${blocoIdNorm}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
                         const lacreOrig = (row.LACRE_ORIGINAL !== undefined && row.LACRE_ORIGINAL !== null) ? String(row.LACRE_ORIGINAL).trim() : '';
                         const origemImportada = (row.ORIGEM || 'GRU').toString().trim().toUpperCase();
 
@@ -5868,19 +6196,19 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                         }
 
                         if (docExcelB64 && cia === 'LATAM') {
-                            salvarSessionSeguro(`minuta_excel_latam_${destUpper}`, docExcelB64);
+                            salvarSessionSeguro(`minuta_excel_latam_${destUpper}`, docExcelB64, opAlvoPacote);
                         }
 
                         const docFormalPdfB64 = row.DOC_FORMAL_PDF_B64 || '';
                         const docFormalPdfNome = row.DOC_FORMAL_PDF_NOME || '';
                         const formalMetaObj = row.FORMAL_META || null;
                         if (docFormalPdfB64) {
-                            salvarSessionSeguro(`minuta_pdf_formal_${destUpper}`, docFormalPdfB64);
+                            salvarSessionSeguro(`minuta_pdf_formal_${destUpper}`, docFormalPdfB64, opAlvoPacote);
                         }
 
                         registrosLidos.push({
                             id: id,
-                            operacao: operacaoAtual,
+                            operacao: opAlvoPacote,
                             cia: cia,
                             destino: destStr,
                             operador: 'EQUIPE',
@@ -7301,8 +7629,11 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 }
             }
 
+            const temFormDisp = minutaPossuiCapturaLatam(minutaAberta, 'FORM');
+            const temAwbDisp = minutaPossuiCapturaLatam(minutaAberta, 'AWB');
+
             const btnForm = document.getElementById(`btn-previa-form-${iata3}`) || document.querySelector('[id^="btn-previa-form-"]');
-            if (btnForm && imgForm) {
+            if (btnForm && temFormDisp) {
                 btnForm.textContent = '👀 Visualizar Formulário';
                 btnForm.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500';
                 btnForm.removeAttribute('disabled');
@@ -7315,7 +7646,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             }
 
             const btnAwb = document.getElementById(`btn-previa-awb-${iata3}`) || document.querySelector('[id^="btn-previa-awb-"]');
-            if (btnAwb && imgAwb) {
+            if (btnAwb && temAwbDisp) {
                 btnAwb.textContent = '👀 Visualizar AWB';
                 btnAwb.className = 'px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-sm bg-emerald-500 text-white cursor-pointer hover:bg-emerald-600';
                 btnAwb.removeAttribute('disabled');
@@ -7373,8 +7704,11 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 if (tipo === 'FORM') {
                     alvo._capturaLocalRecenteForm = true;
                     alvo._capturaFormRejeitadaLocalmente = false;
+                    alvo.dados.tem_img_form = true;
+                } else {
+                    alvo._capturaLocalRecenteAwb = true;
+                    alvo.dados.tem_img_awb = true;
                 }
-                else alvo._capturaLocalRecenteAwb = true;
                 salvarSessionSeguro(`${prefixo}id_${alvo.id}`, imagem, opAlvo);
                 if (awb && String(awb).trim()) {
                     alvo.dados.awb = String(awb).trim();
@@ -7382,8 +7716,11 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta !== alvo) {
                     if (!minutaAberta.dados) minutaAberta.dados = {};
                     minutaAberta.dados[campo] = imagem;
+                    if (tipo === 'FORM') minutaAberta.dados.tem_img_form = true;
+                    else minutaAberta.dados.tem_img_awb = true;
                     if (awb && String(awb).trim()) minutaAberta.dados.awb = String(awb).trim();
                 }
+                notificarMudancaStatusMinutaTempoReal(alvo, 'CAPTURA');
                 if (supabaseClient) {
                     salvarDadosMinutaPreservandoAnexos(alvo);
                 }
@@ -7433,15 +7770,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         async function verificarCapturasAoVoltarParaAba() {
             if (!minutaAberta || document.getElementById('detail-view').classList.contains('hidden')) return;
             atualizarUICapturasMinutaAberta();
-            if ((minutaAberta.cia || '').toUpperCase() === 'LATAM') {
-                const temForm = Boolean(obterImagemMinuta(minutaAberta, 'FORM'));
-                const temAwb = Boolean(obterImagemMinuta(minutaAberta, 'AWB'));
-                if (!temForm || !temAwb) {
-                    await garantirAnexosMinutaNoCache(minutaAberta, true);
-                    atualizarUICapturasMinutaAberta();
-                    renderCardsRelatorios();
-                }
-            }
+            renderCardsRelatorios();
         }
 
         window.addEventListener('focus', () => {
@@ -7461,13 +7790,19 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             }
         }, 700);
 
-        window.abrirModalImagemPorDestino = function(iata3, bruto, tipo) {
+        window.abrirModalImagemPorDestino = async function(iata3, bruto, tipo) {
             let imgBase64 = null;
             if (minutaAberta) {
                 imgBase64 = obterImagemMinuta(minutaAberta, tipo);
+                if (!imgBase64 && supabaseClient) {
+                    showToast('Carregando captura do banco...');
+                    await garantirAnexosMinutaNoCache(minutaAberta, true);
+                    imgBase64 = obterImagemMinuta(minutaAberta, tipo);
+                    atualizarUICapturasMinutaAberta();
+                }
             }
             if (!imgBase64) {
-                showToast('Imagem não encontrada na sessão.');
+                showToast('Imagem não encontrada no banco.');
                 return;
             }
             const labelTipo = tipo === 'FORM' ? 'Formulário' : 'Confirmação AWB';
@@ -7496,10 +7831,15 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             }
         }
 
-        window.abrirModalImagemDiretaAuditoria = function(destBruto, labelTipo, minutaId, tipo) {
+        window.abrirModalImagemDiretaAuditoria = async function(destBruto, labelTipo, minutaId, tipo) {
             const m = minutasDb.find(x => x.id === minutaId);
             if (!m) return;
-            const imgBase64 = obterImagemMinuta(m, tipo);
+            let imgBase64 = obterImagemMinuta(m, tipo);
+            if (!imgBase64 && supabaseClient) {
+                showToast('Carregando captura do banco...');
+                await garantirAnexosMinutaNoCache(m, true);
+                imgBase64 = obterImagemMinuta(m, tipo);
+            }
             if (!imgBase64) return;
             document.getElementById('modal-previa-titulo').textContent = `Captura: ${labelTipo} (${destBruto})`;
             document.getElementById('modal-previa-pdf').classList.add('hidden');
@@ -8876,6 +9216,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 const alvo = idx !== -1 ? minutasDb[idx] : m;
                 if (!alvo.dados) alvo.dados = {};
                 alvo.dados.pdf_gol = pdfDataUri;
+                alvo.dados.tem_pdf_gol = true;
                 alvo.dados.modo_manual_gol = true;
                 alvo.dados.awb_pendente_manual = !(alvo.dados.awb && String(alvo.dados.awb).trim());
                 alvo.dados.captura_operacao_id = opEscopo;
@@ -8888,6 +9229,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 };
                 minutaAberta = alvo;
 
+                notificarMudancaStatusMinutaTempoReal(alvo, 'PDF_GOL_MANUAL');
                 if (supabaseClient) {
                     await salvarDadosMinutaPreservandoAnexos(alvo);
                 }
@@ -8961,9 +9303,10 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 abrirModalFinalizadas();
             }
 
+            notificarMudancaStatusMinutaTempoReal(minutasDb[idx], 'AWB_MANUAL');
             notificarAwbTempoRealSistemaAereo(minutasDb[idx], val);
             if (supabaseClient) {
-                await salvarDadosMinutaPreservandoAnexos(minutasDb[idx]);
+                await salvarDadosMinutaPreservandoAnexos(minutasDb[idx], { status: minutasDb[idx].status });
             }
             showToast(`✅ AWB ${val} salvo em ${minutasDb[idx].destino} e enviado ao Controle Operacional!`);
         };
@@ -8990,7 +9333,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 sincronizarTudoComBanco(false, true);
                 setTimeout(() => garantirTemplateGolEmBrancoNoBanco(), 1200);
             });
-            setInterval(() => { if (usuarioLogado && !document.hidden) sincronizarTudoComBanco(false, false); }, 30000);
+            setInterval(() => { if (usuarioLogado && !document.hidden) sincronizarTudoComBanco(false, false); }, 6000);
             if(window.lucide) setTimeout(() => { lucide.createIcons(); }, 100);
         }
     
@@ -9109,10 +9452,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                     const opEsc = m.operacao || operacaoAtual || '';
                     salvarSessionSeguro(`minuta_excel_latam_${(m.destino || '').trim().toUpperCase()}`, m.dados.doc_excel_b64, opEsc);
                 }
-                if (supabaseClient && m.id && !m._corrigiuValorNotaNoBanco) {
-                    m._corrigiuValorNotaNoBanco = true;
-                    salvarDadosMinutaPreservandoAnexos(m);
-                }
+                m.dados.tem_doc_formal = true;
                 return true;
             }
             return false;
@@ -9120,7 +9460,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
 
         function buildFormalMinutaExtraSectionHtml(m) {
             corrigirMetaFormalValorTotalNotaSeNecessario(m);
-            const pdfFormal = obterPdfFormalMinuta(m);
+            const pdfFormal = minutaPossuiPdfFormal(m);
             const nomePdf = (m.dados && m.dados.doc_formal_pdf_nome) ? m.dados.doc_formal_pdf_nome : 'FORMAL.pdf';
             const meta = (m.dados && m.dados.formal_meta) || {};
             const valorMostrado = meta.valorTotalNf || m.dados?.remessa?.Valor || 0;
@@ -9362,11 +9702,16 @@ Verifique os dados da base/remessa antes de prosseguir.`
             reader.readAsDataURL(file);
         };
 
-        window.abrirModalPreviaPdfFormal = function() {
+        window.abrirModalPreviaPdfFormal = async function() {
             const alvo = (minutaAberta && ehMinutaFormal(minutaAberta))
                 ? minutaAberta
                 : minutasDb.find(m => (!m.operacao || m.operacao === operacaoAtual) && ehMinutaFormal(m));
-            const pdfFormal = obterPdfFormalMinuta(alvo);
+            let pdfFormal = obterPdfFormalMinuta(alvo);
+            if (!pdfFormal && alvo && supabaseClient) {
+                showToast('Carregando Documento Formal do banco...');
+                await garantirAnexosMinutaNoCache(alvo, true);
+                pdfFormal = obterPdfFormalMinuta(alvo);
+            }
             if (!pdfFormal) {
                 abrirModalSistema("Aviso", "Nenhum PDF de Documentação Formal está anexado nesta minuta.");
                 return;
