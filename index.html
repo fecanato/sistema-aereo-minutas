@@ -1389,7 +1389,43 @@
             });
         }
         
-        let abaWorkspace = 'ANDAMENTO'; let filtroUsuario = 'FELIPE'; let filtroStatus = 'TODOS'; let minutaAberta = null; 
+        let abaWorkspace = 'ANDAMENTO'; let filtroUsuario = 'FELIPE'; let filtroStatus = 'TODOS'; let minutaAberta = null;
+        let modoConsultaHistoricoAtivo = false;
+        let _gerandoRelatorioLock = false;
+        const _autoVerificadosAnexosIds = new Set();
+
+        function escapeAttr(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function isOperacaoFinalizada(nomeOpOpcional = '') {
+            const alvo = String(nomeOpOpcional || operacaoAtual || '').trim();
+            if (!alvo) return false;
+            const estaAtiva = operacoesAtivasDb.some(o => String(o.nome || '').trim() === alvo);
+            if (estaAtiva) return false;
+            const estaNoHistorico = historicoOperacoes.some(h => String(h.nome || '').trim() === alvo);
+            return estaNoHistorico || modoConsultaHistoricoAtivo;
+        }
+
+        function ensureOperacaoAtivaParaEscrita(acaoLabel = 'realizar esta alteração') {
+            if (!operacaoAtual) {
+                abrirModalSistema("Sem Operação Ativa", `Selecione ou crie uma operação ativa antes de ${acaoLabel}.`);
+                return false;
+            }
+            if (isOperacaoFinalizada(operacaoAtual)) {
+                abrirModalSistema(
+                    "Operação Finalizada (Modo Consulta) 🔒",
+                    `A "${operacaoAtual}" já foi finalizada e está aberta apenas para consulta no Histórico 48h.\n\nNão é permitido ${acaoLabel} em uma operação encerrada. Caso precise editar, clique em "Reabrir operação" na tela de Operações.`
+                );
+                return false;
+            }
+            return true;
+        }
 
         function salvarCacheOperacoes() {
             try {
@@ -1641,9 +1677,17 @@
             } else if (tab === 'WORKSPACE') {
                 document.getElementById('workspace-view').classList.remove('hidden'); showNavBar(false); badgeOp.classList.remove('md:inline-flex'); badgeOp.classList.add('hidden'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); document.getElementById('btn-finalizar-op').classList.add('hidden'); renderWorkspace();
             } else if (tab === 'PAINEL') {
-                document.getElementById('dashboard-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-painel')) document.getElementById('tab-btn-painel').className = activeClass; renderDashboard(); renderCardsRelatorios();
+                document.getElementById('dashboard-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex');
+                if (operacaoAtual && !isOperacaoFinalizada(operacaoAtual)) document.getElementById('btn-finalizar-op').classList.remove('hidden');
+                else document.getElementById('btn-finalizar-op').classList.add('hidden');
+                if (operacaoAtual) badgeOp.textContent = isOperacaoFinalizada(operacaoAtual) ? `${operacaoAtual} (CONSULTA)` : operacaoAtual;
+                if(document.getElementById('tab-btn-painel')) document.getElementById('tab-btn-painel').className = activeClass; renderDashboard(); renderCardsRelatorios();
             } else if (tab === 'CONFIG') {
-                document.getElementById('config-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex'); if(operacaoAtual) document.getElementById('btn-finalizar-op').classList.remove('hidden'); if(document.getElementById('tab-btn-config')) document.getElementById('tab-btn-config').className = activeClass; renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig();
+                document.getElementById('config-view').classList.remove('hidden'); showNavBar(true); badgeOp.classList.remove('hidden'); badgeOp.classList.add('md:inline-flex'); document.getElementById('header-user-info').classList.remove('hidden'); document.getElementById('header-user-info').classList.add('flex');
+                if (operacaoAtual && !isOperacaoFinalizada(operacaoAtual)) document.getElementById('btn-finalizar-op').classList.remove('hidden');
+                else document.getElementById('btn-finalizar-op').classList.add('hidden');
+                if (operacaoAtual) badgeOp.textContent = isOperacaoFinalizada(operacaoAtual) ? `${operacaoAtual} (CONSULTA)` : operacaoAtual;
+                if(document.getElementById('tab-btn-config')) document.getElementById('tab-btn-config').className = activeClass; renderCardsRelatorios(); renderMalha(); renderBases(); renderEmailsConfig();
             } else if (tab === 'USUARIOS') {
                 if (usrView) usrView.classList.remove('hidden');
                 document.getElementById('header-user-info').classList.remove('hidden');
@@ -1653,7 +1697,8 @@
                     showNavBar(true);
                     badgeOp.classList.remove('hidden');
                     badgeOp.classList.add('md:inline-flex');
-                    document.getElementById('btn-finalizar-op').classList.remove('hidden');
+                    if (!isOperacaoFinalizada(operacaoAtual)) document.getElementById('btn-finalizar-op').classList.remove('hidden');
+                    else document.getElementById('btn-finalizar-op').classList.add('hidden');
                     if (backWrap) backWrap.classList.add('hidden');
                 } else {
                     showNavBar(false);
@@ -1695,8 +1740,15 @@
 
             const jaCarregouDoBancoNestaSessao = (minutaObj._anexosBancoCarregadosId === minutaObj.id);
             const temTudoEmMemoria = (cia === 'LATAM' && d.img_form && d.img_awb && d.doc_excel_b64 && (!ehFormal || d.doc_formal_pdf_b64)) || (cia === 'GOL' && d.pdf_gol);
+            // Mesmo que já tenha carregado antes na sessão, se sincronizarTudoComBanco substituiu minutaObj.dados pelo projeção leve (sem os base64), precisamos buscar do banco!
+            const faltandoAnexoEsperado = (cia === 'LATAM' && (
+                (!d.img_form && (d.tem_img_form || minutaObj.status === 'CONCLUÍDA')) ||
+                (!d.img_awb && (d.tem_img_awb || minutaObj.status === 'CONCLUÍDA')) ||
+                (!d.doc_excel_b64 && d.tem_doc_excel) ||
+                (ehFormal && !d.doc_formal_pdf_b64 && d.tem_doc_formal)
+            )) || (cia === 'GOL' && (!d.pdf_gol && (d.tem_pdf_gol || d.modo_manual_gol || minutaObj.status === 'CONCLUÍDA')));
 
-            if (supabaseClient && minutaObj.id && (forcarConsultaBanco || (!jaCarregouDoBancoNestaSessao && !temTudoEmMemoria))) {
+            if (supabaseClient && minutaObj.id && (forcarConsultaBanco || faltandoAnexoEsperado || (!jaCarregouDoBancoNestaSessao && !temTudoEmMemoria))) {
                 try {
                     const { data, error } = await supabaseClient.from('minutas').select('status,operador,dados,operacao').eq('id', minutaObj.id).maybeSingle();
                     if (!error && data && data.dados) {
@@ -1711,22 +1763,29 @@
 
                             // Preserva os metadados atuais em memória (status, awb, concluido_por, etc.) e mescla apenas anexos faltantes do banco
                             const merged = Object.assign({}, dbDados, minutaObj.dados);
-                            if (minutaObj._capturaFormRejeitadaLocalmente) {
-                                delete merged.img_form;
+                            if (minutaObj._capturaFormRejeitadaLocalmente || minutaObj._forcarReaberturaExplicita) {
+                                if (!minutaObj.dados.img_form) delete merged.img_form;
                             } else if (minutaObj.dados.img_form && minutaObj._capturaLocalRecenteForm) {
                                 merged.img_form = minutaObj.dados.img_form;
                             } else if (dbDados.img_form) {
                                 merged.img_form = dbDados.img_form;
                             }
 
-                            if (minutaObj.dados.img_awb && minutaObj._capturaLocalRecenteAwb) {
+                            if (minutaObj._capturaAwbRejeitadaLocalmente || minutaObj._forcarReaberturaExplicita) {
+                                if (!minutaObj.dados.img_awb) delete merged.img_awb;
+                            } else if (minutaObj.dados.img_awb && minutaObj._capturaLocalRecenteAwb) {
                                 merged.img_awb = minutaObj.dados.img_awb;
                             } else if (dbDados.img_awb) {
                                 merged.img_awb = dbDados.img_awb;
                             }
 
-                            if (minutaObj.dados.pdf_gol) merged.pdf_gol = minutaObj.dados.pdf_gol;
-                            else if (dbDados.pdf_gol) merged.pdf_gol = dbDados.pdf_gol;
+                            if (minutaObj._forcarReaberturaExplicita && !minutaObj.dados.pdf_gol) {
+                                delete merged.pdf_gol;
+                            } else if (minutaObj.dados.pdf_gol) {
+                                merged.pdf_gol = minutaObj.dados.pdf_gol;
+                            } else if (dbDados.pdf_gol) {
+                                merged.pdf_gol = dbDados.pdf_gol;
+                            }
 
                             if (minutaObj.dados.doc_excel_b64) merged.doc_excel_b64 = minutaObj.dados.doc_excel_b64;
                             else if (dbDados.doc_excel_b64) merged.doc_excel_b64 = dbDados.doc_excel_b64;
@@ -1760,11 +1819,11 @@
                                 merged.horario_conclusao = dbDados.horario_conclusao;
                             }
 
-                            if (merged.img_form) merged.tem_img_form = true;
-                            if (merged.img_awb) merged.tem_img_awb = true;
-                            if (merged.pdf_gol) merged.tem_pdf_gol = true;
-                            if (merged.doc_formal_pdf_b64 || merged.doc_formal_pdf_nome) merged.tem_doc_formal = true;
-                            if (merged.doc_excel_b64 || merged.doc_excel_nome) merged.tem_doc_excel = true;
+                            merged.tem_img_form = Boolean(merged.img_form || (!minutaObj._capturaFormRejeitadaLocalmente && !minutaObj._forcarReaberturaExplicita && (merged.tem_img_form || dbDados.tem_img_form)));
+                            merged.tem_img_awb = Boolean(merged.img_awb || (!minutaObj._capturaAwbRejeitadaLocalmente && !minutaObj._forcarReaberturaExplicita && (merged.tem_img_awb || dbDados.tem_img_awb)));
+                            merged.tem_pdf_gol = Boolean(merged.pdf_gol || (!minutaObj._forcarReaberturaExplicita && (merged.tem_pdf_gol || dbDados.tem_pdf_gol)));
+                            merged.tem_doc_formal = Boolean(merged.doc_formal_pdf_b64 || merged.doc_formal_pdf_nome || merged.tem_doc_formal || dbDados.tem_doc_formal);
+                            merged.tem_doc_excel = Boolean(merged.doc_excel_b64 || merged.doc_excel_nome || merged.tem_doc_excel || dbDados.tem_doc_excel);
 
                             minutaObj.dados = merged;
 
@@ -1790,15 +1849,29 @@
         // Atualiza uma minuta no Supabase de forma enfileirada por ID para evitar condição de corrida entre Captura Form, Captura AWB e Concluir Minuta
         async function salvarDadosMinutaPreservandoAnexos(minutaObj, extraTopFields = {}) {
             if (!supabaseClient || !minutaObj || !minutaObj.id) return;
+            if (isOperacaoFinalizada(minutaObj.operacao || operacaoAtual)) return;
             const idProt = minutaObj.id;
             registrarPendenciaSync(idProt);
 
             const anterior = filaSavesPorMinuta.get(idProt) || Promise.resolve();
             const novaPromessa = anterior.then(async () => {
                 try {
-                    await garantirAnexosMinutaNoCache(minutaObj, false);
-                    const statusPersistir = extraTopFields.status || minutaObj.status || 'PENDENTE';
-                    const payload = Object.assign({ status: statusPersistir, dados: minutaObj.dados }, extraTopFields);
+                    // Força hidratação segura caso qualquer anexo esperado não esteja em memória no momento do save!
+                    await garantirAnexosMinutaNoCache(minutaObj, true);
+                    if (!minutaObj.dados) minutaObj.dados = {};
+                    if (minutaObj.dados.img_form) minutaObj.dados.tem_img_form = true;
+                    if (minutaObj.dados.img_awb) minutaObj.dados.tem_img_awb = true;
+                    if (minutaObj.dados.pdf_gol) minutaObj.dados.tem_pdf_gol = true;
+                    if (minutaObj.dados.doc_formal_pdf_b64 || minutaObj.dados.doc_formal_pdf_nome) minutaObj.dados.tem_doc_formal = true;
+                    if (minutaObj.dados.doc_excel_b64 || minutaObj.dados.doc_excel_nome) minutaObj.dados.tem_doc_excel = true;
+
+                    let statusPersistir = extraTopFields.status || minutaObj.status || 'PENDENTE';
+                    // BLINDAGEM ANTI-REBAIXAMENTO: Se a minuta já está CONCLUÍDA (ou tem concluido_por + AWB/Manual) e não foi pedido Refazer explícito, NUNCA rebaixa para EM PREENCHIMENTO ou PENDENTE!
+                    if (!minutaObj._forcarReaberturaExplicita && (minutaObj.status === 'CONCLUÍDA' || (minutaObj.dados.concluido_por && (minutaObj.dados.awb || minutaObj.dados.modo_manual_gol)))) {
+                        statusPersistir = 'CONCLUÍDA';
+                        minutaObj.status = 'CONCLUÍDA';
+                    }
+                    const payload = Object.assign({ status: statusPersistir, dados: minutaObj.dados }, extraTopFields, { status: statusPersistir });
                     await supabaseClient.from('minutas').update(payload).eq('id', idProt);
                 } catch (e) {
                     console.error('Erro ao salvar minuta preservando anexos:', e);
@@ -1880,22 +1953,25 @@
                         renderLogin();
                         if (!document.getElementById('usuarios-view')?.classList.contains('hidden')) renderUsuariosAdmin();
                     }
+                    // Reconcilia SEMPRE os registros __SYS_OP__* com a tabela operacoes (garantindo sincronia imediata com o Controle Operacional)
+                    const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
                     if (resOps.error) {
-                        const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
                         operacoesAtivasDb = []; historicoOperacoes = [];
-                        for (const op of opRows) {
-                            const nomeOpRow = op.operacao;
-                            if (!nomeOpRow) continue;
-                            const finalizadoEm = op.finalizado_em ? Number(op.finalizado_em) : null;
-                            if (op.status === 'FINALIZADA') {
-                                if (!finalizadoEm || (agora - finalizadoEm <= limite48h)) {
-                                    if (!historicoOperacoes.some(h => h.nome === nomeOpRow)) {
-                                        historicoOperacoes.push({ id: op.id, nome: nomeOpRow, criado_por: op.operador, finalizado_em: finalizadoEm });
-                                    }
+                    }
+                    for (const op of opRows) {
+                        const nomeOpRow = op.operacao;
+                        if (!nomeOpRow) continue;
+                        const finalizadoEm = op.finalizado_em ? Number(op.finalizado_em) : agora;
+                        if (op.status === 'FINALIZADA') {
+                            // Se __SYS_OP__ diz FINALIZADA, garante que saia de operacoesAtivasDb e vá para historicoOperacoes
+                            operacoesAtivasDb = operacoesAtivasDb.filter(o => o.nome !== nomeOpRow && o.id !== op.id);
+                            if (!finalizadoEm || (agora - finalizadoEm <= limite48h)) {
+                                if (!historicoOperacoes.some(h => h.nome === nomeOpRow)) {
+                                    historicoOperacoes.unshift({ id: op.id, nome: nomeOpRow, criado_por: op.operador, finalizado_em: finalizadoEm });
                                 }
-                            } else if (!operacoesAtivasDb.some(o => o.nome === nomeOpRow)) {
-                                operacoesAtivasDb.push({ id: op.id, nome: nomeOpRow, criado_por: op.operador });
                             }
+                        } else if (!historicoOperacoes.some(h => h.nome === nomeOpRow) && !operacoesAtivasDb.some(o => o.nome === nomeOpRow)) {
+                            operacoesAtivasDb.push({ id: op.id, nome: nomeOpRow, criado_por: op.operador });
                         }
                     }
 
@@ -2007,7 +2083,42 @@
                         return objMinuta;
                     });
 
-                    // Salva no localStorage sem estourar cota com imagens pesadas
+                    // Auto-reparo em background de flags de anexos (para minutas cujas imagens/PDF já estão no banco mas sem a flag booleana tem_img_form/tem_pdf_gol)
+                    if (operacaoAtual && !isOperacaoFinalizada(operacaoAtual)) {
+                        const minutasParaRepararFlag = minutasDb.filter(m =>
+                            (!m.operacao || m.operacao === operacaoAtual) &&
+                            !_autoVerificadosAnexosIds.has(m.id) &&
+                            (m.status === 'EM PREENCHIMENTO' || m.status === 'CONCLUÍDA' || (m.dados && m.dados.awb)) &&
+                            (
+                                ((m.cia || '').toUpperCase() === 'LATAM' && (!m.dados?.tem_img_form || !m.dados?.tem_img_awb)) ||
+                                ((m.cia || '').toUpperCase() === 'GOL' && !m.dados?.tem_pdf_gol)
+                            )
+                        );
+                        if (minutasParaRepararFlag.length > 0) {
+                            minutasParaRepararFlag.forEach(m => _autoVerificadosAnexosIds.add(m.id));
+                            Promise.all(minutasParaRepararFlag.map(async (m) => {
+                                const antesF = Boolean(m.dados?.tem_img_form);
+                                const antesA = Boolean(m.dados?.tem_img_awb);
+                                const antesG = Boolean(m.dados?.tem_pdf_gol);
+                                await garantirAnexosMinutaNoCache(m, true);
+                                const depoisF = Boolean(m.dados?.tem_img_form);
+                                const depoisA = Boolean(m.dados?.tem_img_awb);
+                                const depoisG = Boolean(m.dados?.tem_pdf_gol);
+                                if (depoisF !== antesF || depoisA !== antesA || depoisG !== antesG) {
+                                    await salvarDadosMinutaPreservandoAnexos(m);
+                                    return true;
+                                }
+                                return false;
+                            })).then(resArr => {
+                                if (resArr.some(Boolean)) {
+                                    renderDashboard();
+                                    renderCardsRelatorios();
+                                }
+                            }).catch(() => {});
+                        }
+                    }
+
+                    // Salva no localStorage sem estourar cota com imagens pesadas (incluindo TODAS as flags de captura e PDF para os cards de relatório!)
                     try {
                         const cacheLeve = minutasDb.map(m => ({
                             ...m,
@@ -2018,10 +2129,18 @@
                                 awb: m.dados?.awb,
                                 modo_manual_gol: m.dados?.modo_manual_gol,
                                 awb_pendente_manual: m.dados?.awb_pendente_manual,
+                                aguardando_cte_contingencia: m.dados?.aguardando_cte_contingencia,
                                 concluido_por: m.dados?.concluido_por,
                                 horario_conclusao: m.dados?.horario_conclusao,
                                 doc_excel_nome: m.dados?.doc_excel_nome,
                                 doc_formal_pdf_nome: m.dados?.doc_formal_pdf_nome,
+                                tem_img_form: Boolean(m.dados?.tem_img_form),
+                                tem_img_awb: Boolean(m.dados?.tem_img_awb),
+                                tem_pdf_gol: Boolean(m.dados?.tem_pdf_gol),
+                                tem_doc_formal: Boolean(m.dados?.tem_doc_formal),
+                                tem_doc_excel: Boolean(m.dados?.tem_doc_excel),
+                                auditoria_ia_latam_form: m.dados?.auditoria_ia_latam_form,
+                                auditoria_ia_gol: m.dados?.auditoria_ia_gol,
                                 formal_meta: m.dados?.formal_meta,
                                 remessa: m.dados?.remessa
                             }
@@ -2058,20 +2177,39 @@
                 }
 
                 const opSalvaLocal = localStorage.getItem('sistema_aereo_op_atual');
-                if (operacoesAtivasDb.length === 1) {
+                if (operacaoAtual && historicoOperacoes.some(h => h.nome === operacaoAtual) && !operacoesAtivasDb.some(o => o.nome === operacaoAtual)) {
+                    if (!modoConsultaHistoricoAtivo) {
+                        // A operação que estava aberta como ativa foi finalizada em outro dispositivo ou no Controle Operacional!
+                        const opEncerrada = operacaoAtual;
+                        operacaoAtual = operacoesAtivasDb.length === 1 ? operacoesAtivasDb[0].nome : '';
+                        if (operacaoAtual) {
+                            localStorage.setItem('sistema_aereo_op_atual', operacaoAtual);
+                            document.getElementById('active-op-badge').textContent = operacaoAtual;
+                        } else {
+                            localStorage.removeItem('sistema_aereo_op_atual');
+                            document.getElementById('active-op-badge').textContent = 'Sem Operação';
+                            if (usuarioLogado && document.getElementById('workspace-view').classList.contains('hidden')) {
+                                minutaAberta = null;
+                                switchMainTab('WORKSPACE');
+                                showToast(`A "${opEncerrada}" foi finalizada e movida para o Histórico 48h.`);
+                            }
+                        }
+                    } else {
+                        document.getElementById('active-op-badge').textContent = `${operacaoAtual} (CONSULTA)`;
+                        document.getElementById('btn-finalizar-op')?.classList.add('hidden');
+                    }
+                } else if (operacoesAtivasDb.length === 1) {
                     const unicaAtiva = operacoesAtivasDb[0].nome;
-                    if (!operacaoAtual || !historicoOperacoes.some(h => h.nome === operacaoAtual)) {
+                    if (!operacaoAtual || !modoConsultaHistoricoAtivo) {
                         operacaoAtual = unicaAtiva;
+                        modoConsultaHistoricoAtivo = false;
                         localStorage.setItem('sistema_aereo_op_atual', operacaoAtual);
                         document.getElementById('active-op-badge').textContent = operacaoAtual;
                     }
                 } else if (opSalvaLocal && operacoesAtivasDb.some(o => o.nome === opSalvaLocal)) {
                     operacaoAtual = opSalvaLocal;
+                    modoConsultaHistoricoAtivo = false;
                     document.getElementById('active-op-badge').textContent = operacaoAtual;
-                } else if (operacaoAtual && historicoOperacoes.some(h => h.nome === operacaoAtual) && document.getElementById('workspace-view').classList.contains('hidden') === false) {
-                    operacaoAtual = '';
-                    localStorage.removeItem('sistema_aereo_op_atual');
-                    document.getElementById('active-op-badge').textContent = 'Sem Operação';
                 }
 
                 if(resMalha && !resMalha.error && resMalha.data) { malhaDb = resMalha.data; try{localStorage.setItem('cache_malha', JSON.stringify(malhaDb));}catch(e){} notificarMalhaAtualizadaSistemaAereo(); }
@@ -2132,6 +2270,15 @@
             if (Array.isArray(salvosOps) && salvosOps.length > 0) {
                 operadores = Array.from(new Set(salvosOps.map(x => String(x || '').trim().toUpperCase()).filter(Boolean)));
             }
+            // Filtra operadores que tenham sido marcados como excluídos
+            operadores = operadores.filter(op => {
+                const n = String(op || '').trim().toUpperCase();
+                return n && !(usuariosAuthDb[n] && usuariosAuthDb[n].excluido === true);
+            });
+            if (operadores.length === 0) {
+                operadores = ['FELIPE', 'JAQUELINE', 'KAIO'].filter(n => !(usuariosAuthDb[n] && usuariosAuthDb[n].excluido === true));
+                if (operadores.length === 0) operadores = ['FELIPE'];
+            }
             operadores.forEach(op => {
                 const nome = String(op || '').trim().toUpperCase();
                 if (!nome) return;
@@ -2165,21 +2312,42 @@
                 for (const [k, v] of Object.entries(remUsuariosAuth)) {
                     const nome = String(k || v?.nome || '').trim().toUpperCase();
                     if (!nome) continue;
+                    if (v && v.excluido === true) {
+                        usuariosAuthDb[nome] = {
+                            nome,
+                            senha: '',
+                            email: String(v.email || DEFAULT_FEDEX_EMAILS_BY_USER[nome] || ''),
+                            excluido: true,
+                            atualizado_em: v.atualizado_em || Date.now()
+                        };
+                        operadores = operadores.filter(o => String(o || '').trim().toUpperCase() !== nome);
+                        continue;
+                    }
                     const local = usuariosAuthDb[nome] || {};
                     const emailPadrao = DEFAULT_FEDEX_EMAILS_BY_USER[nome] || '';
                     usuariosAuthDb[nome] = {
                         nome,
                         senha: (v && v.senha !== undefined) ? String(v.senha || '') : String(local.senha || ''),
                         email: (v && v.email && String(v.email).trim() !== '') ? String(v.email).trim().toLowerCase() : String(local.email || emailPadrao),
+                        excluido: false,
                         atualizado_em: v?.atualizado_em || local.atualizado_em || Date.now()
                     };
-                    if (!operadores.includes(nome) && !v?.excluido) {
+                    if (!operadores.includes(nome)) {
                         operadores.push(nome);
                     }
                 }
             }
             garantirEstruturaUsuariosAuth();
             salvarCacheLocalUsuariosAuth();
+
+            // Se o modal de login estiver aberto para um usuário cujo status de senha mudou em outro PC, sincroniza os campos sem fechar!
+            const modalAuth = document.getElementById('modal-auth-global');
+            if (usuarioSelecionadoAuth && modalAuth && !modalAuth.classList.contains('hidden')) {
+                const uAtual = usuariosAuthDb[usuarioSelecionadoAuth];
+                if (uAtual && uAtual.excluido) {
+                    fecharModalAuthGlobal();
+                }
+            }
         }
 
         async function persistirConfigGlobalUsuariosNoBanco() {
@@ -2370,13 +2538,22 @@
             showToast(`Senha cadastrada! Bem-vindo, ${nomeLogar}!`);
         };
 
-        window.submeterLoginComSenha = function() {
+        window.submeterLoginComSenha = async function() {
             if (!usuarioSelecionadoAuth) return;
             const digitada = (document.getElementById('auth-input-senha-login')?.value || '').trim();
-            const uAuth = usuariosAuthDb[usuarioSelecionadoAuth];
             if (!digitada) {
                 exibirFeedbackModalAuth('auth-login-feedback', 'Digite sua senha para entrar.');
                 return;
+            }
+            let uAuth = usuariosAuthDb[usuarioSelecionadoAuth];
+            if ((!uAuth || String(uAuth.senha).trim() !== digitada) && supabaseClient) {
+                try {
+                    const { data } = await supabaseClient.from('minutas').select('dados').eq('id', '__SYS_CONFIG__').maybeSingle();
+                    if (data && data.dados) {
+                        aplicarConfigGlobalUsuariosRecebida(data.dados.operadores, data.dados.usuarios_auth);
+                        uAuth = usuariosAuthDb[usuarioSelecionadoAuth];
+                    }
+                } catch (e) {}
             }
             if (!uAuth || String(uAuth.senha).trim() !== digitada) {
                 exibirFeedbackModalAuth('auth-login-feedback', 'Senha incorreta. Tente novamente ou clique em Esqueci a senha.');
@@ -2412,11 +2589,8 @@
             usuarioLogado = nomeUp;
             filtroUsuario = nomeUp;
             try {
-                localStorage.setItem('sistema_aereo_usuario', nomeUp);
-                localStorage.setItem('sistema_aereo_sessao_autenticada_v1', JSON.stringify({
-                    nome: nomeUp,
-                    ts: Date.now()
-                }));
+                localStorage.removeItem('sistema_aereo_usuario');
+                localStorage.removeItem('sistema_aereo_sessao_autenticada_v1');
             } catch (e) {}
             document.getElementById('header-user-name').textContent = nomeUp;
             document.getElementById('workspace-user-name').textContent = nomeUp;
@@ -2587,10 +2761,13 @@
                 `Deseja remover o operador "${nomeUp}" da lista de acesso?`,
                 async () => {
                     operadores = operadores.filter(o => String(o).toUpperCase() !== nomeUp);
-                    if (usuariosAuthDb[nomeUp]) {
-                        usuariosAuthDb[nomeUp].excluido = true;
-                        delete usuariosAuthDb[nomeUp];
-                    }
+                    usuariosAuthDb[nomeUp] = {
+                        ...(usuariosAuthDb[nomeUp] || {}),
+                        nome: nomeUp,
+                        senha: '',
+                        excluido: true,
+                        atualizado_em: Date.now()
+                    };
                     await persistirConfigGlobalUsuariosNoBanco();
                     renderLogin();
                     renderUsuariosAdmin();
@@ -2639,7 +2816,7 @@
             } else {
                 if(historicoOperacoes.length > 0) {
                     list.className = 'grid gap-4 text-left';
-                    list.innerHTML = historicoOperacoes.map(op => `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center justify-between flex-wrap gap-3"><div onclick="entrarOperacao('${op.nome}')" class="cursor-pointer"><h3 class="font-bold text-slate-900 dark:text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Finalizada • No histórico por 48h</p></div><div class="flex items-center gap-2"><button onclick="reabrirOperacao('${op.id}', '${op.nome}')" class="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button><button onclick="entrarOperacao('${op.nome}')" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition">Consultar →</button></div></div>`).join('');
+                    list.innerHTML = historicoOperacoes.map(op => `<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center justify-between flex-wrap gap-3"><div onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="cursor-pointer"><h3 class="font-bold text-slate-900 dark:text-white text-lg tracking-tight">${op.nome}</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Finalizada • Modo Consulta (48h)</p></div><div class="flex items-center gap-2"><button onclick="reabrirOperacao('${escapeAttr(op.id)}', '${escapeAttr(op.nome)}')" class="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-500/20 transition">Reabrir operação</button><button onclick="entrarOperacao('${escapeAttr(op.nome)}', true)" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition">Consultar →</button></div></div>`).join('');
                 } else {
                     list.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center';
                     list.innerHTML = `<p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Nenhuma operação no histórico de 48h.</p>`;
@@ -2648,9 +2825,13 @@
             if(window.lucide && document.getElementById('workspace-view').classList.contains('hidden') === false) lucide.createIcons();
         }
 
-        window.entrarOperacao = function(nomeOp) {
+        window.entrarOperacao = function(nomeOp, ehConsultaHistorico = false) {
             operacaoAtual = nomeOp;
-            localStorage.setItem('sistema_aereo_op_atual', nomeOp);
+            const estaNoHist = historicoOperacoes.some(h => h.nome === nomeOp) && !operacoesAtivasDb.some(o => o.nome === nomeOp);
+            modoConsultaHistoricoAtivo = Boolean(ehConsultaHistorico || estaNoHist);
+            if (!modoConsultaHistoricoAtivo) {
+                localStorage.setItem('sistema_aereo_op_atual', nomeOp);
+            }
             limparChavesSemEscopoNoSessionStorage();
             const prefAtivo = `${String(nomeOp || '').trim().toUpperCase()}::`;
             for (const k of Array.from(memoriaAnexosCache.keys())) {
@@ -2659,12 +2840,26 @@
                     memoriaAnexosTs.delete(k);
                 }
             }
+            try {
+                const remSess = [];
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i);
+                    if (k && k.includes('::') && !k.startsWith(prefAtivo)) {
+                        remSess.push(k);
+                    }
+                }
+                remSess.forEach(k => sessionStorage.removeItem(k));
+            } catch (e) {}
             hidratarCacheAnexosDoIdb().then(() => {
                 if (!document.getElementById('dashboard-view').classList.contains('hidden')) renderDashboard();
             });
-            document.getElementById('active-op-badge').textContent = operacaoAtual;
+            document.getElementById('active-op-badge').textContent = modoConsultaHistoricoAtivo ? `${operacaoAtual} (CONSULTA)` : operacaoAtual;
             switchMainTab('PAINEL');
-            verificarPacotePendenteSistemaAereo();
+            if (!modoConsultaHistoricoAtivo) {
+                verificarPacotePendenteSistemaAereo();
+            } else {
+                showToast(`Modo Consulta: "${operacaoAtual}" está finalizada (somente leitura).`);
+            }
         }
         window.reabrirOperacao = function(idOp, nomeOp) {
             if (operacoesAtivasDb.length > 0) {
@@ -2714,10 +2909,16 @@
         window.fecharModalFinalizarOp = function() { document.getElementById('modal-finalizar').classList.add('hidden'); }
         window.confirmarFinalizarOperacao = function() {
             if(operacaoAtual) {
-                const opObj = operacoesAtivasDb.find(o => o.nome === operacaoAtual); const idOp = opObj ? opObj.id : ('__SYS_OP__' + operacaoAtual.replace(/[^a-zA-Z0-9]/g, '_')); const agora = Date.now();
+                const nomeEncerrar = operacaoAtual;
+                const opObj = operacoesAtivasDb.find(o => o.nome === nomeEncerrar); const idOp = opObj ? opObj.id : ('__SYS_OP__' + nomeEncerrar.replace(/[^a-zA-Z0-9]/g, '_')); const agora = Date.now();
                 if(opObj) { operacoesAtivasDb = operacoesAtivasDb.filter(o => o.id !== idOp); historicoOperacoes.unshift({ ...opObj, finalizado_em: agora }); salvarCacheOperacoes(); }
+                const evFin = { type: 'OPERACAO_FINALIZADA_REALTIME', operacao: nomeEncerrar, id: idOp, finalizado_em: agora, ts: agora };
+                try { if (busLocalAereo) busLocalAereo.postMessage(evFin); } catch (e) {}
+                try { if (canalRealtimeAereo) canalRealtimeAereo.send({ type: 'broadcast', event: 'OPERACAO_FINALIZADA_REALTIME', payload: evFin }); } catch (e) {}
                 if(supabaseClient) { Promise.all([ supabaseClient.from('operacoes').update({ status: 'FINALIZADA', finalizado_em: agora }).eq('id', idOp), supabaseClient.from('minutas').update({ status: 'FINALIZADA', dados: { finalizado_em: agora, finalizado_por: usuarioLogado } }).eq('id', idOp) ]).then(() => { sincronizarTudoComBanco(false); }); }
             }
+            minutaAberta = null;
+            modoConsultaHistoricoAtivo = false;
             operacaoAtual = ''; localStorage.removeItem('sistema_aereo_op_atual'); document.getElementById('active-op-badge').textContent = 'Sem Operação'; fecharModalFinalizarOp(); switchMainTab('WORKSPACE'); showToast('Operação enviada ao histórico.');
         }
 
@@ -2908,16 +3109,17 @@
                     return;
                 }
             }
+            const opDaMinuta = minutaAberta.operacao || operacaoAtual || '';
+            const opSomenteLeitura = isOperacaoFinalizada(opDaMinuta);
             const jaTemConclusao = Boolean(minutaAberta.status === 'CONCLUÍDA' || (minutaAberta.dados?.concluido_por && (minutaAberta.dados?.awb || minutaAberta.dados?.modo_manual_gol)));
             if (jaTemConclusao && minutaAberta.status !== 'CONCLUÍDA') {
                 minutaAberta.status = 'CONCLUÍDA';
-            } else if (minutaAberta.status === 'PENDENTE' && !jaTemConclusao) {
+            } else if (!opSomenteLeitura && minutaAberta.status === 'PENDENTE' && !jaTemConclusao) {
                 minutaAberta.status = 'EM PREENCHIMENTO';
-                registrarPendenciaSync(id);
                 notificarMudancaStatusMinutaTempoReal(minutaAberta, 'EM_PREENCHIMENTO');
                 if(supabaseClient) {
-                    // Trava .eq('status', 'PENDENTE') garante que o banco JAMAIS rebaixe uma minuta já CONCLUÍDA por outro operador!
-                    supabaseClient.from('minutas').update({ status: 'EM PREENCHIMENTO' }).eq('id', id).eq('status', 'PENDENTE').then(() => liberarPendenciaSync(id));
+                    // Verifica e atualiza apenas se no banco realmente ainda estiver PENDENTE (sem bloquear o sync por 25s caso outro PC já tenha concluído!)
+                    supabaseClient.from('minutas').update({ status: 'EM PREENCHIMENTO' }).eq('id', id).eq('status', 'PENDENTE').then(() => {});
                 }
             }
             document.getElementById('dashboard-view').classList.add('hidden'); document.getElementById('detail-view').classList.remove('hidden');
@@ -2937,6 +3139,10 @@
             const dProcessado = aplicarRegrasMalhaEInjetarBases(minutaAberta);
             const valAwb = (minutaAberta.dados && minutaAberta.dados.awb) ? minutaAberta.dados.awb : '';
             const placeholderAwb = (minutaAberta.cia === 'LATAM') ? 'Ex: 957-12345678' : 'Ex: 12766360814';
+
+            if (opSomenteLeitura) {
+                container.innerHTML += `<div class="bg-slate-800 text-amber-300 border border-amber-500/40 rounded-2xl p-4 flex items-center justify-between gap-3 text-xs font-bold mb-4 shadow-sm"><div class="flex items-center gap-2.5"><i data-lucide="lock" class="w-4 h-4 shrink-0 text-amber-400"></i><span>MODO CONSULTA (HISTÓRICO 48H): Esta operação está finalizada. Visualização de capturas, PDFs e relatórios liberada (edição bloqueada).</span></div></div>`;
+            }
 
             if (dProcessado.regraAplicadaMsg) {
                 container.innerHTML += `<div class="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-2xl p-4 flex items-center gap-3 text-amber-800 dark:text-amber-300 text-xs font-bold mb-4"><i data-lucide="zap" class="w-4 h-4 shrink-0 text-amber-500"></i><span>${dProcessado.regraAplicadaMsg}</span></div>`;
@@ -3068,6 +3274,10 @@
         window.processarImportacaoUniversal = async function(event) {
             const file = event.target.files[0];
             if (!file) return;
+            if (!ensureOperacaoAtivaParaEscrita('importar arquivos')) {
+                event.target.value = '';
+                return;
+            }
 
             const nomeArquivo = file.name.toLowerCase();
             if (nomeArquivo.endsWith('.zip')) {
@@ -3121,7 +3331,9 @@
                         if (!minutaAlvo.dados) minutaAlvo.dados = {};
                         minutaAlvo.dados.doc_excel_b64 = b64Excel;
                         minutaAlvo.dados.doc_excel_nome = nomeArquivoOriginal;
-                        salvarSessionSeguro(`minuta_excel_latam_${(minutaAlvo.destino||'').trim().toUpperCase()}`, b64Excel);
+                        minutaAlvo.dados.tem_doc_excel = true;
+                        salvarSessionSeguro(`minuta_excel_latam_${(minutaAlvo.destino||'').trim().toUpperCase()}`, b64Excel, minutaAlvo.operacao || operacaoAtual);
+                        notificarMudancaStatusMinutaTempoReal(minutaAlvo, 'EXCEL_ZIP');
 
                         totalImportados++;
                         if (supabaseClient) {
@@ -3362,6 +3574,7 @@
                         if (supabaseClient) {
                             supabaseClient.from('minutas').insert(registrosLidos).then(({ error }) => {
                                 if(error) abrirModalSistema("Erro", "Falha ao salvar no banco: " + error.message);
+                                else if (registrosLidos[0]) notificarMudancaStatusMinutaTempoReal(registrosLidos[0], 'NOVA_IMPORTACAO');
                             });
                         }
                     }
@@ -3375,10 +3588,14 @@
             let qtdIguaisIgnorados = 0;
 
             registrosLidos.forEach(novo => {
+                const chaveBlocoNovo = String(novo.dados?.BLOCO_ID || '').trim().toUpperCase();
                 const chaveDest = normalizarTextoComparacao(novo.destino);
                 const chaveCia  = normalizarTextoComparacao(novo.cia);
 
-                const existente = minutasExistentesOp.find(m =>
+                const existente = (chaveBlocoNovo ? minutasExistentesOp.find(m =>
+                    String(m.dados?.BLOCO_ID || '').trim().toUpperCase() === chaveBlocoNovo &&
+                    normalizarTextoComparacao(m.cia) === chaveCia
+                ) : null) || minutasExistentesOp.find(m =>
                     normalizarTextoComparacao(m.destino) === chaveDest &&
                     normalizarTextoComparacao(m.cia) === chaveCia
                 );
@@ -3473,6 +3690,18 @@
                         delete ex.dados.img_form;
                         delete ex.dados.img_awb;
                         delete ex.dados.pdf_gol;
+                        delete ex.dados.tem_img_form;
+                        delete ex.dados.tem_img_awb;
+                        delete ex.dados.tem_pdf_gol;
+                        delete ex.dados.auditoria_ia_latam_form;
+                        delete ex.dados.auditoria_ia_gol;
+                        delete ex.dados.peso_pdf_editado;
+                        delete ex.dados.modo_manual_gol;
+                        delete ex.dados.awb_pendente_manual;
+                        delete ex.dados.aguardando_cte_contingencia;
+                        ex._anexosBancoCarregadosId = null;
+                        ex._concluidaLocalTs = 0;
+                        ex._forcarReaberturaExplicita = true;
                         ex.dados.awb = '';
                         ex.dados.concluido_por = '';
                         ex.dados.horario_conclusao = '';
@@ -3493,6 +3722,7 @@
                         ex.dados.remessa = Object.assign({}, ex.dados.remessa || {}, nv.dados.remessa);
                         ex.status = 'PENDENTE';
 
+                        notificarMudancaStatusMinutaTempoReal(ex, 'RESET_INCREMENTAL');
                         if (supabaseClient) {
                             registrarPendenciaSync(ex.id);
                             promessasBanco.push(
@@ -3749,6 +3979,8 @@
 
             window.dispatchEvent(new CustomEvent('EnviarExcelLatam', {
                 detail: {
+                    minutaId: minutaAberta.id,
+                    blocoId: (minutaAberta.dados && minutaAberta.dados.BLOCO_ID) || '',
                     destino: (minutaAberta.destino || '').trim().toUpperCase(),
                     destinoIata: destIata,
                     nomeArquivo: nomeArquivoExcel,
@@ -3757,7 +3989,7 @@
                 }
             }));
 
-            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
+            const urlLatam = `https://script.google.com/macros/s/AKfycbw81g1vTtUoY4IetHY5kJiwAlma-XcVxkXsV8fSuoFWXuXmrkNSMJtnMel_K7einU4r1A/exec?origem=${origem}&destino=${destino}&recebedor=${recebedor}&destino_bruto=${destBrutoEnc}&minuta_id=${encodeURIComponent(minutaAberta.id || '')}&peso=${peso}&volume=${volume}&produto=${prodCode}`;
             setTimeout(() => {
                 window.open(urlLatam, '_blank');
             }, 80);
@@ -4376,6 +4608,12 @@
             const opEscopo = minutaAberta.operacao || operacaoAtual || '';
             salvarSessionSeguro(`minuta_pdf_gol_id_${minutaAberta.id}`, pdfDataUriEditado, opEscopo);
 
+            if (!minutaAberta.dados) minutaAberta.dados = {};
+            if (opcoesPeso && opcoesPeso.editarPeso) {
+                minutaAberta.dados.peso_pdf_editado = opcoesPeso.pesoRealStr;
+            } else {
+                delete minutaAberta.dados.peso_pdf_editado;
+            }
             const auditoriaFinal = auditarDocumentoPdfGolPelaIa(minutaAberta, dadosPdf, false);
 
             const idx = minutasDb.findIndex(m => m.id === minutaAberta.id);
@@ -4390,6 +4628,8 @@
                 if (cte) minutasDb[idx].dados.awb = cte;
                 if (opcoesPeso && opcoesPeso.editarPeso) {
                     minutasDb[idx].dados.peso_pdf_editado = opcoesPeso.pesoRealStr;
+                } else {
+                    delete minutasDb[idx].dados.peso_pdf_editado;
                 }
                 minutasDb[idx].dados.auditoria_ia_gol = {
                     validado: true,
@@ -4431,6 +4671,10 @@
         window.processarUploadPdfGol = async function(event) {
             const file = event.target.files[0];
             if (!file || !minutaAberta) return;
+            if (!ensureOperacaoAtivaParaEscrita('anexar PDF da GOL')) {
+                event.target.value = '';
+                return;
+            }
 
             try {
                 showToast('🤖 IA auditando todos os dados do PDF GOL (Origem, Destino, Volume, Peso, Serviço, CNPJ e CT-e)...');
@@ -4613,6 +4857,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         window.copiarValor = function(btn, valor) { navigator.clipboard.writeText(valor).then(() => { showToast(`Copiado!`); const iconeOrigin = btn.innerHTML; btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i> Copiado`; btn.classList.remove('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); btn.classList.add('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); if(window.lucide) lucide.createIcons(); setTimeout(() => { btn.innerHTML = iconeOrigin; btn.classList.remove('bg-emerald-50', 'text-emerald-600', 'dark:bg-emerald-500/10', 'dark:text-emerald-400'); btn.classList.add('bg-slate-100', 'dark:bg-slate-700', 'text-slate-600', 'dark:text-slate-300'); if(window.lucide) lucide.createIcons(); }, 2000); }); }
 
         window.marcarConcluida = async function() {
+            if (!ensureOperacaoAtivaParaEscrita('concluir a minuta')) return;
             if(minutaAberta) {
                 const ehLatam = (minutaAberta.cia || '').toUpperCase() === 'LATAM';
                 if (ehLatam) {
@@ -5204,6 +5449,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 abrirModalSistema("Aviso", "Selecione ou crie uma operação primeiro.");
                 return;
             }
+            if (_gerandoRelatorioLock) return;
+            _gerandoRelatorioLock = true;
+            try {
 
             const minutasOp = minutasDb.filter(m => (!m.operacao || m.operacao === operacaoAtual) && (m.cia || '').toUpperCase() === 'LATAM' && obterOrigemFinalMinuta(m) === origemAlvo);
 
@@ -5301,10 +5549,14 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     { nomeArquivo: nomeArquivoPdf, dataUri: pdfDataUri }
                 ]);
 
+                renderCardsRelatorios();
                 showToast(`PDF e E-mail Outlook (${origemAlvo}) gerados!`);
             } catch (err) {
                 console.error(err);
                 abrirModalSistema("Erro ao Gerar Relatório", "Ocorreu uma falha ao montar o PDF ou o rascunho de e-mail: " + err.message);
+            }
+            } finally {
+                setTimeout(() => { _gerandoRelatorioLock = false; }, 800);
             }
         }
 
@@ -5313,6 +5565,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 abrirModalSistema("Aviso", "Selecione ou crie uma operação primeiro.");
                 return;
             }
+            if (_gerandoRelatorioLock) return;
+            _gerandoRelatorioLock = true;
+            try {
 
             const minutasGol = minutasDb.filter(m => (!m.operacao || m.operacao === operacaoAtual) && (m.cia || '').toUpperCase() === 'GOL');
 
@@ -5360,10 +5615,14 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 const nomeBaseEml = `MINUTAS FEDEX GOL ${dataTracoCurta}`;
                 gerarEBaixarRascunhoEmlMultiplosAnexos('GOL', modeloDestinoGol, nomeBaseEml, listaAnexosGol);
 
+                renderCardsRelatorios();
                 showToast(`E-mail GOL gerado com ${listaAnexosGol.length} PDF(s) anexado(s)!`);
             } catch (err) {
                 console.error(err);
                 abrirModalSistema("Erro ao Gerar E-mail GOL", "Ocorreu uma falha ao montar os anexos da GOL: " + err.message);
+            }
+            } finally {
+                setTimeout(() => { _gerandoRelatorioLock = false; }, 800);
             }
         };
 
@@ -5499,6 +5758,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
         // Permite refazer uma única minuta individualmente sem afetar as demais minutas da operação
         window.refazerMinutaIndividual = function(minutaId) {
+            if (!ensureOperacaoAtivaParaEscrita('refazer a minuta')) return;
             const m = minutasDb.find(x => x.id === minutaId) || (minutaAberta && minutaAberta.id === minutaId ? minutaAberta : null);
             if (!m) return;
 
@@ -5821,7 +6081,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         }
 
         window.confirmarLimparDadosOperacao = function() {
-            if(!operacaoAtual) { abrirModalSistema("Aviso", "Nenhuma operação ativa!"); return; }
+            if (!ensureOperacaoAtivaParaEscrita('limpar os dados da operação')) return;
             abrirModalSistema("Limpar Dados", "Isso apagará permanentemente todas as minutas, AWBs, capturas e minutas manuais desta operação. Deseja continuar?", async () => {
                 showToast('Limpando todos os dados, capturas e minutas manuais...');
                 const opAlvo = operacaoAtual;
@@ -5849,7 +6109,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         }
 
         window.redistribuirMinutasJusta = function() {
-            if(!operacaoAtual) { abrirModalSistema("Inválido", "Nenhuma operação ativa no momento."); return; }
+            if (!ensureOperacaoAtivaParaEscrita('redistribuir minutas')) return;
             const minutasOp = minutasDb.filter(m => !m.operacao || m.operacao === operacaoAtual);
             if(minutasOp.length === 0) { abrirModalSistema("Vazio", "Não há minutas nesta operação para redistribuir."); return; }
             
@@ -5882,6 +6142,8 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             const awbLimpo = String(data.awb_aereo || '').trim().toUpperCase();
             if (!awbLimpo || awbLimpo === 'AGUARDANDO_CTE') return;
             const opEvento = String(data.operacao || '').trim();
+            if (opEvento && isOperacaoFinalizada(opEvento)) return;
+            if (!opEvento && isOperacaoFinalizada(operacaoAtual)) return;
             const dtBrEvento = String(data.flightDateBr || '').trim();
             const blocoIdAlvo = String(data.bloco_id || '').trim().toUpperCase();
             const destAlvo = String(data.destino || '').trim().toUpperCase();
@@ -6015,7 +6277,20 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 alvo.dados.modo_manual_gol = false;
                 alvo.dados.awb_pendente_manual = false;
                 alvo.dados.aguardando_cte_contingencia = false;
+            } else if (data.acao === 'CAPTURA_REJEITADA_FORM') {
+                delete alvo.dados.img_form;
+                delete alvo.dados.tem_img_form;
+                delete alvo.dados.auditoria_ia_latam_form;
+                alvo._anexosBancoCarregadosId = null;
+            } else if (data.acao === 'CAPTURA_REJEITADA_AWB') {
+                delete alvo.dados.img_awb;
+                delete alvo.dados.tem_img_awb;
+                alvo._anexosBancoCarregadosId = null;
             } else {
+                // Se outro dispositivo subiu nova captura ou PDF, invalida _anexosBancoCarregadosId para carregar sob demanda quando clicar em Visualizar
+                if (data.acao === 'CAPTURA' || data.acao === 'PDF_GOL' || data.acao === 'PDF_GOL_MANUAL' || data.acao === 'DOC_FORMAL') {
+                    alvo._anexosBancoCarregadosId = null;
+                }
                 // Se já está CONCLUÍDA localmente, não rebaixa para EM PREENCHIMENTO se chegou evento atrasado de captura
                 if (alvo.status !== 'CONCLUÍDA' && data.status) {
                     alvo.status = data.status;
@@ -6030,10 +6305,10 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 if (data.modo_manual_gol !== undefined) alvo.dados.modo_manual_gol = Boolean(data.modo_manual_gol);
                 if (data.awb_pendente_manual !== undefined) alvo.dados.awb_pendente_manual = Boolean(data.awb_pendente_manual);
                 if (data.aguardando_cte_contingencia !== undefined) alvo.dados.aguardando_cte_contingencia = Boolean(data.aguardando_cte_contingencia);
-                if (data.tem_img_form) alvo.dados.tem_img_form = true;
-                if (data.tem_img_awb) alvo.dados.tem_img_awb = true;
-                if (data.tem_pdf_gol) alvo.dados.tem_pdf_gol = true;
-                if (data.tem_doc_formal) alvo.dados.tem_doc_formal = true;
+                if (data.tem_img_form !== undefined) alvo.dados.tem_img_form = Boolean(data.tem_img_form);
+                if (data.tem_img_awb !== undefined) alvo.dados.tem_img_awb = Boolean(data.tem_img_awb);
+                if (data.tem_pdf_gol !== undefined) alvo.dados.tem_pdf_gol = Boolean(data.tem_pdf_gol);
+                if (data.tem_doc_formal !== undefined) alvo.dados.tem_doc_formal = Boolean(data.tem_doc_formal);
                 if (data.auditoria_ia_latam_form) alvo.dados.auditoria_ia_latam_form = data.auditoria_ia_latam_form;
                 if (data.auditoria_ia_gol) alvo.dados.auditoria_ia_gol = data.auditoria_ia_gol;
                 if (alvo.status === 'PENDENTE' && (alvo.dados.tem_img_form || alvo.dados.tem_img_awb || alvo.dados.tem_pdf_gol)) {
@@ -6070,6 +6345,8 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                         verificarPacotePendenteSistemaAereo(data.targetOpNome || operacaoAtual);
                     } else if (data.type === 'CTE_AWB_VINCULADA_CONTROLE') {
                         aplicarAwbCteRecebidaDoControle(data);
+                    } else if (data.type === 'OPERACAO_FINALIZADA_REALTIME') {
+                        sincronizarTudoComBanco(false, false);
                     } else if (data.type === 'MINUTA_STATUS_REALTIME') {
                         aplicarEventoStatusMinutaTempoReal(data);
                     } else if (data.type === 'AWB_AEREA_GERADA' && data.minuta_id) {
@@ -6124,6 +6401,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     .on('broadcast', { event: 'CTE_AWB_VINCULADA_CONTROLE' }, (payload) => {
                         const data = payload.payload;
                         if (data) aplicarAwbCteRecebidaDoControle(data);
+                    })
+                    .on('broadcast', { event: 'OPERACAO_FINALIZADA_REALTIME' }, () => {
+                        sincronizarTudoComBanco(false, false);
                     })
                     .on('broadcast', { event: 'MINUTA_STATUS_REALTIME' }, (payload) => {
                         const data = payload.payload;
@@ -6182,6 +6462,10 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
         function notificarAwbTempoRealSistemaAereo(minuta, awbVal) {
             if (!minuta || !awbVal) return;
+            const opMin = minuta.operacao || operacaoAtual || '';
+            if (isOperacaoFinalizada(opMin)) return;
+            // REGRA ESTRITA: Só envia AWB_AEREA_GERADA para o Controle Operacional quando a minuta está CONCLUÍDA (ou em contingência manual GOL já concluída/salva)
+            if (minuta.status !== 'CONCLUÍDA' && !(minuta.dados && minuta.dados.modo_manual_gol)) return;
             const ehAguardandoCte = (String(awbVal).toUpperCase() === 'AGUARDANDO_CTE' || String(awbVal).toUpperCase() === 'AGUARDANDO CT-E');
             const evento = {
                 type: 'AWB_AEREA_GERADA',
@@ -6206,7 +6490,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
         async function verificarPacotePendenteSistemaAereo(opAlvoExplicita = null) {
             const opAlvoVerif = opAlvoExplicita || operacaoAtual;
-            if (!supabaseClient || !opAlvoVerif || processandoPacoteAereo) return;
+            if (!supabaseClient || !opAlvoVerif || processandoPacoteAereo || isOperacaoFinalizada(opAlvoVerif)) return;
             try {
                 const syncRowId = '__SYS_AEREO_SYNC__' + String(opAlvoVerif).replace(/[^a-zA-Z0-9]/g, '_');
                 const { data, error } = await supabaseClient.from('minutas').select('*').in('id', [syncRowId, '__SYS_AEREO_SYNC__']).eq('status', 'PENDENTE');
@@ -6314,8 +6598,10 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                                 awb: row.AWB_AEREO || '',
                                 doc_excel_b64: docExcelB64 || undefined,
                                 doc_excel_nome: docExcelNome || undefined,
+                                tem_doc_excel: Boolean(docExcelB64 || docExcelNome),
                                 doc_formal_pdf_b64: docFormalPdfB64 || undefined,
                                 doc_formal_pdf_nome: docFormalPdfNome || undefined,
+                                tem_doc_formal: Boolean(docFormalPdfB64 || docFormalPdfNome || formalMetaObj),
                                 formal_meta: formalMetaObj || undefined,
                                 remessa: {
                                     Origem: origemImportada,
@@ -6417,7 +6703,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         }
 
         window.exportarParaSistemaAereo = async function() {
-            if(!operacaoAtual) { abrirModalSistema("Aviso", "Nenhuma operação ativa."); return; }
+            if (!ensureOperacaoAtivaParaEscrita('exportar AWBs para o Controle Operacional')) return;
             const minutasOp = minutasDb.filter(m => !m.operacao || m.operacao === operacaoAtual);
             if(minutasOp.length === 0) { abrirModalSistema("Aviso", "Não há minutas para exportar."); return; }
             const pendentes = minutasOp.filter(m => m.status !== 'CONCLUÍDA');
@@ -6716,7 +7002,16 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 if (exataBruto) return exataBruto;
             }
 
-            // 4. Verifica o alvo registrado por ID único quando o operador abriu a minuta ou clicou em "Preencher Minuta" (`ultimoAlvoCapturaLatam`)
+            // 4. Se `minutaAberta` está aberta na tela no momento e é compatível com o IATA da captura, prioriza `minutaAberta` imediatamente!
+            if (minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM' && !document.getElementById('detail-view')?.classList.contains('hidden')) {
+                const chavesAberta = obterChavesCandidatasCaptura(minutaAberta);
+                if (!b && !i3) return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
+                if (chavesAberta.includes(b) || chavesAberta.includes(i3) || chavesAberta.includes((iata3 || '').trim().toUpperCase())) {
+                    return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
+                }
+            }
+
+            // 5. Verifica o alvo registrado por ID único quando o operador abriu a minuta ou clicou em "Preencher Minuta" (`ultimoAlvoCapturaLatam`)
             const alvoAtivo = lerAlvoCapturaLatam();
             if (alvoAtivo && alvoAtivo.id && (!alvoAtivo.operacao || alvoAtivo.operacao === operacaoAtual)) {
                 const minAlvo = minutasDb.find(m => m.id === alvoAtivo.id);
@@ -6725,15 +7020,6 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     if (!i3 || chavesAlvo.includes(i3) || chavesAlvo.includes(b)) {
                         return minAlvo;
                     }
-                }
-            }
-
-            // 5. Se `minutaAberta` está ativa e é compatível com o IATA da captura, usa o ID exato de `minutaAberta`
-            if (minutaAberta && (minutaAberta.cia || '').toUpperCase() === 'LATAM') {
-                const chavesAberta = obterChavesCandidatasCaptura(minutaAberta);
-                if (!b && !i3) return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
-                if (chavesAberta.includes(b) || chavesAberta.includes(i3) || chavesAberta.includes((iata3 || '').trim().toUpperCase())) {
-                    return minutasDb.find(m => m.id === minutaAberta.id) || minutaAberta;
                 }
             }
 
@@ -6947,6 +7233,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
             if (alvo.dados) {
                 delete alvo.dados.img_form;
+                delete alvo.dados.tem_img_form;
                 delete alvo.dados.auditoria_ia_latam_form;
             }
             alvo._capturaLocalRecenteForm = false;
@@ -6954,6 +7241,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
             if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
                 delete minutaAberta.dados.img_form;
+                delete minutaAberta.dados.tem_img_form;
                 delete minutaAberta.dados.auditoria_ia_latam_form;
             }
 
@@ -6961,6 +7249,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             if (destExatoAlvo) removerSessionSeguro(`minuta_img_form_${destExatoAlvo}`, opAlvo);
             if (i3Base) removerSessionSeguro(`minuta_img_form_${i3Base}`, opAlvo);
 
+            notificarMudancaStatusMinutaTempoReal(alvo, 'CAPTURA_REJEITADA_FORM');
             if (supabaseClient) {
                 salvarDadosMinutaPreservandoAnexos(alvo);
             }
@@ -6989,17 +7278,23 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             const destExatoAlvo = (alvo.destino || '').trim().toUpperCase();
             const i3Base = extrairIataBase(destExatoAlvo);
 
-            if (alvo.dados) delete alvo.dados.img_awb;
+            if (alvo.dados) {
+                delete alvo.dados.img_awb;
+                delete alvo.dados.tem_img_awb;
+            }
             alvo._capturaLocalRecenteAwb = false;
+            alvo._capturaAwbRejeitadaLocalmente = true;
 
             if (minutaAberta && minutaAberta.id === alvo.id && minutaAberta.dados) {
                 delete minutaAberta.dados.img_awb;
+                delete minutaAberta.dados.tem_img_awb;
             }
 
             removerSessionSeguro(`minuta_img_awb_id_${alvo.id}`, opAlvo);
             if (destExatoAlvo) removerSessionSeguro(`minuta_img_awb_${destExatoAlvo}`, opAlvo);
             if (i3Base) removerSessionSeguro(`minuta_img_awb_${i3Base}`, opAlvo);
 
+            notificarMudancaStatusMinutaTempoReal(alvo, 'CAPTURA_REJEITADA_AWB');
             if (supabaseClient) {
                 salvarDadosMinutaPreservandoAnexos(alvo);
             }
@@ -7810,6 +8105,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
 
         function processarCapturaLatamTempoReal(tipo, detail) {
             if (!detail || !detail.imagem) return;
+            if (isOperacaoFinalizada(operacaoAtual)) return;
             const { iata3, bruto, awb, imagem } = detail;
             const prefixo = tipo === 'FORM' ? 'minuta_img_form_' : 'minuta_img_awb_';
             const campo = tipo === 'FORM' ? 'img_form' : 'img_awb';
@@ -7926,10 +8222,33 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             }
         });
 
-        // Watcher leve local (0 bytes de Egress) para detectar instantaneamente qualquer captura injetada no sessionStorage pela extensão
+        // Watcher leve local (0 bytes de Egress) com hash de estado para detectar capturas novas no sessionStorage sem reconstruir o DOM sem necessidade
+        let _ultimoHashWatcherDetalhe = '';
         setInterval(() => {
             if (minutaAberta && !document.getElementById('detail-view').classList.contains('hidden')) {
-                atualizarUICapturasMinutaAberta();
+                const ciaUp = (minutaAberta.cia || '').toUpperCase();
+                const imgF = ciaUp === 'LATAM' ? obterImagemMinuta(minutaAberta, 'FORM') : '';
+                const imgA = ciaUp === 'LATAM' ? obterImagemMinuta(minutaAberta, 'AWB') : '';
+                const pdfG = ciaUp === 'GOL' ? obterPdfGolMinuta(minutaAberta) : '';
+                const hashAtual = [
+                    minutaAberta.id,
+                    minutaAberta.status,
+                    minutaAberta.dados?.awb || '',
+                    Boolean(minutaAberta.dados?.tem_img_form),
+                    Boolean(minutaAberta.dados?.tem_img_awb),
+                    Boolean(minutaAberta.dados?.tem_pdf_gol),
+                    imgF ? imgF.length : 0,
+                    imgA ? imgA.length : 0,
+                    pdfG ? pdfG.length : 0,
+                    minutaAberta._statusAuditoriaIaForm || '',
+                    minutaAberta._capturaFormInvalidaMotivo || '',
+                    Boolean(minutaAberta.dados?.auditoria_ia_latam_form?.validado),
+                    Boolean(minutaAberta.dados?.auditoria_ia_gol?.validado)
+                ].join('|');
+                if (hashAtual !== _ultimoHashWatcherDetalhe) {
+                    _ultimoHashWatcherDetalhe = hashAtual;
+                    atualizarUICapturasMinutaAberta();
+                }
             }
         }, 700);
 
@@ -9119,6 +9438,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         }
 
         window.gerarMinutaManualGol = async function(minutaId) {
+            if (!ensureOperacaoAtivaParaEscrita('gerar Minuta Manual da GOL')) return;
             const m = minutasDb.find(x => x.id === minutaId) || (minutaAberta && minutaAberta.id === minutaId ? minutaAberta : null);
             if (!m) return;
 
@@ -9392,6 +9712,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
         };
 
         window.abrirModalInserirAwbManual = function(minutaId) {
+            if (!ensureOperacaoAtivaParaEscrita('inserir AWB manual')) return;
             const m = minutasDb.find(x => x.id === minutaId);
             if (!m) return;
             document.getElementById('titulo-modal-awb-manual').textContent = `Inserir AWB / CT-e GOL: ${m.destino}`;
@@ -9408,6 +9729,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
         };
 
         window.confirmarInserirAwbManual = async function() {
+            if (!ensureOperacaoAtivaParaEscrita('salvar AWB manual')) return;
             const idMinuta = document.getElementById('input-id-minuta-awb-manual').value;
             const val = (document.getElementById('input-valor-awb-manual').value || '').trim().toUpperCase();
             if (!val) {
@@ -9461,14 +9783,13 @@ Verifique os dados da base/remessa antes de prosseguir.`
             
             try { renderLogin(); } catch(e) {}
 
-            const sessaoAuth = safeParse('sistema_aereo_sessao_autenticada_v1', null);
-            const temSenhaCadastrada = Boolean(usuarioSalvo && usuariosAuthDb[usuarioSalvo] && String(usuariosAuthDb[usuarioSalvo].senha || '').trim().length > 0);
-            if (usuarioSalvo && operadores.includes(usuarioSalvo) && temSenhaCadastrada && sessaoAuth && sessaoAuth.nome === usuarioSalvo) {
-                usuarioLogado = usuarioSalvo; filtroUsuario = usuarioSalvo; document.getElementById('header-user-name').textContent = usuarioSalvo; document.getElementById('workspace-user-name').textContent = usuarioSalvo.toUpperCase(); if(operacaoAtual) document.getElementById('active-op-badge').textContent = operacaoAtual; switchMainTab('WORKSPACE');
-            } else {
-                usuarioLogado = null;
-                switchMainTab('LOGIN');
-            }
+            // SEGURANÇA DE SESSÃO: Sempre exigir senha toda vez que abrir ou recarregar o site!
+            try {
+                localStorage.removeItem('sistema_aereo_usuario');
+                localStorage.removeItem('sistema_aereo_sessao_autenticada_v1');
+            } catch (e) {}
+            usuarioLogado = null;
+            switchMainTab('LOGIN');
 
             // ITEM 3: Hidrata anexos persistentes do IndexedDB (48h) e sincroniza o DOM
             inicializarIntegracaoSistemaAereo();
@@ -9804,6 +10125,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
             const file = event.target.files && event.target.files[0];
             event.target.value = '';
             if (!file) return;
+            if (!ensureOperacaoAtivaParaEscrita('anexar Documento Formal')) return;
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const dataUri = e.target.result;
@@ -9837,8 +10159,10 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 } catch (errOcr) {
                     console.warn('Aviso ao extrair metadados do PDF Formal no Gestão de Minutas:', errOcr);
                 }
+                alvo.dados.tem_doc_formal = true;
                 corrigirMetaFormalValorTotalNotaSeNecessario(alvo);
-                salvarSessionSeguro(`minuta_pdf_formal_${(alvo.destino || '').trim().toUpperCase()}`, dataUri);
+                salvarSessionSeguro(`minuta_pdf_formal_${(alvo.destino || '').trim().toUpperCase()}`, dataUri, alvo.operacao || operacaoAtual);
+                notificarMudancaStatusMinutaTempoReal(alvo, 'DOC_FORMAL');
                 await salvarDadosMinutaPreservandoAnexos(alvo);
                 const valConfirmado = Number(alvo.dados?.formal_meta?.valorTotalNf || alvo.dados?.remessa?.Valor || 0);
                 showToast(`✅ Documento Formal anexado! Valor Total da Nota: ${valConfirmado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
@@ -9885,6 +10209,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 abrirModalSistema("Aviso", "Selecione ou crie uma operação primeiro.");
                 return;
             }
+            if (_gerandoRelatorioLock) return;
             const minutasFormais = minutasDb.filter(m => (!m.operacao || m.operacao === operacaoAtual) && ehMinutaFormal(m));
             if (minutasFormais.length === 0) {
                 abrirModalSistema("Sem Demanda Formal", "Não há nenhuma minuta FOR FORMAL nesta operação.");
@@ -9916,6 +10241,7 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 return;
             }
 
+            _gerandoRelatorioLock = true;
             try {
                 showToast('Gerando PDF da Minuta Formal + E-mail Embarque Formal...');
                 const { jsPDF } = window.jspdf;
@@ -9969,19 +10295,22 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 const pdfMinutaDataUri = doc.output('datauristring');
                 doc.save(nomePdfMinutaFormal);
 
-                // Prepara os dados da remessa formal para preencher o e-mail profissional
+                // Prepara os dados da remessa formal dinamicamente (sem valores hardcoded de clientes antigos)
                 const meta = (mFormal.dados && mFormal.dados.formal_meta) || {};
+                const excelFormalInfo = extrairDadosPlanilhaExcelLatam(mFormal);
                 const awbAerea = (mFormal.dados && mFormal.dados.awb) || 'Conforme Minuta Anexa';
                 const awbFedex = (Array.isArray(meta.awbsFedex) && meta.awbsFedex.length > 0)
                     ? meta.awbsFedex.join(', ')
-                    : (meta.awbFormal || '78945738480');
-                const nfNum = meta.nfNumero || '13233';
-                const duimpStr = meta.duimp || '26BR0002168063-0';
-                const importadorStr = meta.importador || 'TECLAV - TECNOLOGIA E LAVAGEM INDUSTRIAL LTDA';
-                const volStr = String(mFormal.dados?.remessa?.Volume || 2);
-                const pesoStr = Number(mFormal.dados?.remessa?.Peso || 15.5).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-                const valTotalNum = Number(meta.valorTotalNf || mFormal.dados?.remessa?.Valor || 24785.22);
-                const valTotalFormatado = valTotalNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    : (meta.awbFormal || (excelFormalInfo.awbs.length > 0 ? excelFormalInfo.awbs.join(', ') : 'Conforme Documentação Anexa'));
+                const nfNum = meta.nfNumero || 'Conforme DANFE Anexo';
+                const duimpStr = meta.duimp || 'Conforme Extrato DUIMP Anexo';
+                const importadorStr = meta.importador || 'Conforme Documentação Anexa';
+                const volStr = String(mFormal.dados?.remessa?.Volume || 1);
+                const pesoStr = Number(mFormal.dados?.remessa?.Peso || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+                const valTotalNum = Number(meta.valorTotalNf || mFormal.dados?.remessa?.Valor || excelFormalInfo.somaValores || 0);
+                const valTotalFormatado = valTotalNum > 0
+                    ? valTotalNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                    : 'Conforme Nota Fiscal Anexa';
 
                 const cfg = emailsConfigDb.find(e => e.id === 'EMAIL_FORMAL_GRU' || (e.cia || '').toUpperCase() === 'FORMAL')
                          || DEFAULT_EMAILS_CONFIG.find(e => e.id === 'EMAIL_FORMAL_GRU')
@@ -10062,10 +10391,13 @@ Verifique os dados da base/remessa antes de prosseguir.`
                 document.body.removeChild(aEml);
                 setTimeout(() => URL.revokeObjectURL(urlEml), 3000);
 
+                renderCardsRelatorios();
                 showToast('✅ Relatório Formal gerado com os 2 PDFs anexados no e-mail!');
             } catch (err) {
                 console.error(err);
                 abrirModalSistema("Erro ao Gerar Relatório Formal", err.message || String(err));
+            } finally {
+                setTimeout(() => { _gerandoRelatorioLock = false; }, 800);
             }
         };
 
