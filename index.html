@@ -585,6 +585,7 @@
                             <option value="LATAM">LATAM</option>
                             <option value="GOL">GOL</option>
                             <option value="FORMAL">FORMAL (Fortaleza Aéreo)</option>
+                            <option value="LACRES">LACRES (Segurança FedEx)</option>
                         </select>
                     </div>
                     <div>
@@ -593,6 +594,8 @@
                             <option value="GRU">GRU (Padrão)</option>
                             <option value="GRU_MANUAL">GRU_MANUAL (Minuta Manual GOL)</option>
                             <option value="CGH">CGH</option>
+                            <option value="VCP">VCP (Linehaul VCP)</option>
+                            <option value="FOR FORMAL">FOR FORMAL</option>
                         </select>
                     </div>
                 </div>
@@ -615,6 +618,84 @@
                 <div class="pt-2 flex flex-col gap-2">
                     <button onclick="salvarEmailConfig()" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition shadow-sm">Salvar Modelo de E-mail</button>
                     <button onclick="fecharModalEmailConfig()" class="w-full py-2 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-sm transition">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE SOLICITAÇÃO DE LACRES (SEGURANÇA FEDEX — GRU, CGH, VCP) -->
+    <div id="modal-solicitar-lacres" class="hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 max-h-[92vh] flex flex-col">
+            <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-500/10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-sm shrink-0">
+                        <i data-lucide="lock" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">SEGURANÇA FEDEX</span>
+                        <h3 class="text-base font-extrabold text-slate-900 dark:text-white leading-tight">Solicitação de Lacres</h3>
+                    </div>
+                </div>
+                <button type="button" onclick="fecharModalSolicitarLacres()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                <div id="banner-lacres-ja-solicitados" class="hidden p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2">
+                    <span id="texto-lacres-ja-solicitados" class="font-bold leading-snug"></span>
+                    <button type="button" onclick="limparStatusLacresSolicitadosHoje()" class="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-800 text-[10px] font-bold text-slate-500 hover:text-rose-500 transition shrink-0">Desmarcar</button>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">1. Selecione a Operação / Destino</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" id="btn-lacre-dest-GRU" onclick="selecionarDestinoSolicitacaoLacre('GRU')" class="py-3 px-3 rounded-xl font-extrabold text-xs sm:text-sm border-2 transition flex flex-col items-center justify-center gap-0.5">
+                            <span>GRU</span>
+                            <span class="text-[10px] font-semibold opacity-80">Aeroporto GRU</span>
+                        </button>
+                        <button type="button" id="btn-lacre-dest-CGH" onclick="selecionarDestinoSolicitacaoLacre('CGH')" class="py-3 px-3 rounded-xl font-extrabold text-xs sm:text-sm border-2 transition flex flex-col items-center justify-center gap-0.5">
+                            <span>CGH</span>
+                            <span class="text-[10px] font-semibold opacity-80">Aeroporto CGH</span>
+                        </button>
+                        <button type="button" id="btn-lacre-dest-VCP" onclick="selecionarDestinoSolicitacaoLacre('VCP')" class="py-3 px-3 rounded-xl font-extrabold text-xs sm:text-sm border-2 transition flex flex-col items-center justify-center gap-0.5">
+                            <span>VCP</span>
+                            <span class="text-[10px] font-semibold opacity-80">Linehaul VCP</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="input-qtd-lacres-solicitar" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">2. Quantidade de Lacres</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="input-qtd-lacres-solicitar" min="1" max="500" value="15" oninput="atualizarPreviaModalSolicitarLacres()" onkeydown="if(event.key==='Enter') dispararSolicitacaoLacresPadrao()" class="w-28 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-base font-extrabold text-center focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <div class="flex flex-wrap gap-1.5 flex-1">
+                            <button type="button" onclick="definirQtdRapidaLacres(10)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">10</button>
+                            <button type="button" onclick="definirQtdRapidaLacres(15)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">15</button>
+                            <button type="button" onclick="definirQtdRapidaLacres(20)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">20</button>
+                            <button type="button" onclick="definirQtdRapidaLacres(25)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">25</button>
+                            <button type="button" onclick="definirQtdRapidaLacres(30)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">30</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Prévia do E-mail</div>
+                    <div class="text-slate-700 dark:text-slate-300 truncate"><strong class="text-slate-500">Assunto:</strong> <span id="previa-lacre-assunto" class="font-bold"></span></div>
+                    <pre id="previa-lacre-corpo" class="text-slate-700 dark:text-slate-200 font-sans whitespace-pre-wrap leading-relaxed pt-1 border-t border-slate-200/70 dark:border-slate-700/60 mt-1"></pre>
+                </div>
+
+                <div class="pt-1 flex flex-col gap-2">
+                    <button type="button" onclick="dispararSolicitacaoLacresMailto()" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition shadow-sm flex items-center justify-center gap-2">
+                        <i data-lucide="mail" class="w-4 h-4 shrink-0"></i>
+                        <span>Abrir no App Mail (iPhone / Celular / E-mail Padrão)</span>
+                    </button>
+                    <button type="button" onclick="dispararSolicitacaoLacresEmlOutlook()" class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-bold text-xs transition flex items-center justify-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4 shrink-0"></i>
+                        <span>Baixar Rascunho Outlook (.eml com Assinatura FedEx)</span>
+                    </button>
+                    <button type="button" onclick="fecharModalSolicitarLacres()" class="w-full py-2 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-xs transition">
+                        Cancelar
+                    </button>
                 </div>
             </div>
         </div>
@@ -1491,6 +1572,33 @@
                 cc: 'BR-Air-Linehaul@corp.ds.fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
                 assunto: 'Embarque Formal [Data]',
                 corpo: 'Prezados,\n\nEspero que estejam bem.\n\nSegue em anexo a documentação completa e a minuta aérea referentes ao Embarque Formal (FOR FORMAL) da operação do dia [Data].\n\nResumo da Remessa Formal:\n• Destino: FORA FORMAL (Fortaleza)\n• AWB Aérea (LATAM): [AWB_AEREA]\n• AWB FedEx: [AWB_FEDEX]\n• Nota Fiscal (NF-e): [NF_NUMERO]\n• DUIMP: [DUIMP]\n• Importador: [IMPORTADOR]\n• Volumes / Peso: [VOLUMES] vol / [PESO] kg\n• Valor Total da Nota Fiscal: [VALOR_NF]\n\nQualquer dúvida, permanecemos à disposição.\n\nAtenciosamente,'
+            },
+            {
+                id: 'EMAIL_LACRES_GRU',
+                cia: 'LACRES',
+                destino: 'GRU',
+                para: 'suzana.pauletto.osv@fedex.com; aline.garcias.osv@fedex.com; vcp-portaria@corp.ds.fedex.com; vcpsecurity@corp.ds.fedex.com',
+                cc: 'flima1@fedex.com; Cristiane.Goncalves@fedex.com; Rosiane.Rocha@fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                assunto: 'SOLICITAÇÃO DE LACRES ([Data])',
+                corpo: 'Boa noite,\n\nPor gentileza providenciar [QTD] lacres, para a operação no aeroporto de GRU.\n\nObrigado.'
+            },
+            {
+                id: 'EMAIL_LACRES_CGH',
+                cia: 'LACRES',
+                destino: 'CGH',
+                para: 'suzana.pauletto.osv@fedex.com; aline.garcias.osv@fedex.com; vcp-portaria@corp.ds.fedex.com; vcpsecurity@corp.ds.fedex.com',
+                cc: 'flima1@fedex.com; Cristiane.Goncalves@fedex.com; Rosiane.Rocha@fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                assunto: 'SOLICITAÇÃO DE LACRES ([Data])',
+                corpo: 'Boa noite,\n\nPor gentileza providenciar [QTD] lacres, para a operação no aeroporto de CGH.\n\nObrigado.'
+            },
+            {
+                id: 'EMAIL_LACRES_VCP',
+                cia: 'LACRES',
+                destino: 'VCP',
+                para: 'suzana.pauletto.osv@fedex.com; aline.garcias.osv@fedex.com; vcp-portaria@corp.ds.fedex.com; vcpsecurity@corp.ds.fedex.com',
+                cc: 'flima1@fedex.com; Cristiane.Goncalves@fedex.com; Rosiane.Rocha@fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                assunto: 'SOLICITAÇÃO DE LACRES ([Data])',
+                corpo: 'Boa noite,\n\nPor gentileza providenciar [QTD] lacres, para a operação Linehaul VCP.\n\nObrigado.'
             }
         ];
 
@@ -2065,7 +2173,7 @@
                 // OTIMIZAÇÃO CRÍTICA DE EGRESS:
                 // Usa projeção JSONB do PostgREST para NUNCA trafegar img_form, img_awb, pdf_gol ou doc_excel_b64 nas listagens periódicas!
                 // Inclui flags leves de presença de anexos (tem_img_form, tem_img_awb, tem_pdf_gol, tem_doc_formal) para atualizar os botões de relatório em tempo real sem baixar megabytes!
-                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,aguardando_cte_contingencia:dados->aguardando_cte_contingencia,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,tem_img_form:dados->tem_img_form,tem_img_awb:dados->tem_img_awb,tem_pdf_gol:dados->tem_pdf_gol,tem_doc_formal:dados->tem_doc_formal,tem_doc_excel:dados->tem_doc_excel,auditoria_ia_latam_form:dados->auditoria_ia_latam_form,auditoria_ia_gol:dados->auditoria_ia_gol,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em';
+                const selectLeveMinutas = 'id,destino,cia,operador,status,operacao,BLOCO_ID:dados->>BLOCO_ID,LACRE_ORIGINAL:dados->>LACRE_ORIGINAL,ignorar_regra_origem:dados->ignorar_regra_origem,awb:dados->>awb,modo_manual_gol:dados->modo_manual_gol,awb_pendente_manual:dados->awb_pendente_manual,aguardando_cte_contingencia:dados->aguardando_cte_contingencia,concluido_por:dados->>concluido_por,horario_conclusao:dados->>horario_conclusao,doc_excel_nome:dados->>doc_excel_nome,doc_formal_pdf_nome:dados->>doc_formal_pdf_nome,tem_img_form:dados->tem_img_form,tem_img_awb:dados->tem_img_awb,tem_pdf_gol:dados->tem_pdf_gol,tem_doc_formal:dados->tem_doc_formal,tem_doc_excel:dados->tem_doc_excel,auditoria_ia_latam_form:dados->auditoria_ia_latam_form,auditoria_ia_gol:dados->auditoria_ia_gol,formal_meta:dados->formal_meta,remessa:dados->remessa,operadores:dados->operadores,usuarios_auth:dados->usuarios_auth,finalizado_em:dados->finalizado_em,lacres_solicitados:dados->lacres_solicitados';
 
                 const promessas = [
                     supabaseClient.from('operacoes').select('*').order('criado_em', { ascending: false }),
@@ -2120,6 +2228,14 @@
                         renderLogin();
                         if (!document.getElementById('usuarios-view')?.classList.contains('hidden')) renderUsuariosAdmin();
                     }
+                    const lacresRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_LACRES__'));
+                    for (const lr of lacresRows) {
+                        const ch = String(lr.operacao || '').trim();
+                        if (ch && Array.isArray(lr.lacres_solicitados)) {
+                            lacresSolicitadosPorOperacao[ch] = lr.lacres_solicitados;
+                        }
+                    }
+                    try { localStorage.setItem('cache_lacres_solicitados_v1', JSON.stringify(lacresSolicitadosPorOperacao)); } catch (e) {}
                     // Reconcilia SEMPRE os registros __SYS_OP__* com a tabela operacoes (garantindo sincronia imediata com o Controle Operacional)
                     const opRows = rows.filter(r => r.id && String(r.id).startsWith('__SYS_OP__'));
                     if (resOps.error) {
@@ -6361,7 +6477,7 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                         </div>
                     </div>
                 </button>`;
-            }).join('');
+            }).join('') + renderCardSolicitacaoLacresHtml();
 
             if (window.lucide) lucide.createIcons();
         }
@@ -6862,6 +6978,281 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             );
         };
 
+
+        let destinoSelecionadoSolicitacaoLacre = 'GRU';
+        let lacresSolicitadosPorOperacao = safeParse('cache_lacres_solicitados_v1', {});
+        if (!lacresSolicitadosPorOperacao || typeof lacresSolicitadosPorOperacao !== 'object') {
+            lacresSolicitadosPorOperacao = {};
+        }
+
+        function obterChaveEscopoSolicitacaoLacres() {
+            if (operacaoAtual && String(operacaoAtual).trim()) {
+                return String(operacaoAtual).trim();
+            }
+            const { dataBarra } = obterDatasOperacaoFormatadas();
+            return `Operação ${dataBarra}`;
+        }
+
+        function obterListaLacresSolicitadosEscopoAtual() {
+            const chave = obterChaveEscopoSolicitacaoLacres();
+            const arr = lacresSolicitadosPorOperacao[chave];
+            return Array.isArray(arr) ? arr : [];
+        }
+
+        function renderCardSolicitacaoLacresHtml() {
+            const solicitados = obterListaLacresSolicitadosEscopoAtual();
+            if (solicitados.length > 0) {
+                const destinosUnicos = Array.from(new Set(solicitados.map(s => String(s.destino || '').trim().toUpperCase()).filter(Boolean)));
+                const subtitulo = `Lacres solicitados para ${destinosUnicos.join(', ')}`;
+                return `
+                <button type="button" onclick="abrirModalSolicitarLacres()" class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 border-2 border-emerald-500/60 text-left transition flex items-center justify-between gap-3 group shadow-sm">
+                    <div class="flex items-center gap-3.5 min-w-0">
+                        <div class="w-10 h-10 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <i data-lucide="lock" class="w-5 h-5"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h4 class="text-xs font-extrabold text-emerald-950 dark:text-emerald-300 truncate">Solicitação de Lacres</h4>
+                            <p class="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold mt-0.5 truncate">${subtitulo}</p>
+                        </div>
+                    </div>
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform shrink-0"></i>
+                </button>`;
+            }
+            return `
+            <button type="button" onclick="abrirModalSolicitarLacres()" class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-left transition flex items-center justify-between gap-3 group">
+                <div class="flex items-center gap-3.5 min-w-0">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="lock" class="w-5 h-5"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h4 class="text-xs font-bold text-slate-900 dark:text-white truncate">Solicitação de Lacres</h4>
+                        <p class="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5 truncate">Disponível • VCP, GRU ou CGH</p>
+                    </div>
+                </div>
+                <i data-lucide="send" class="w-4 h-4 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-transform shrink-0"></i>
+            </button>`;
+        }
+
+        async function registrarSolicitacaoLacresNaOperacao(destUp, qtdLimpa) {
+            const chave = obterChaveEscopoSolicitacaoLacres();
+            const agora = new Date();
+            const horario = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+            const listaAtual = [...obterListaLacresSolicitadosEscopoAtual()];
+            const novoReg = {
+                destino: destUp,
+                qtd: qtdLimpa,
+                operador: usuarioLogado || 'EQUIPE',
+                horario,
+                ts: Date.now()
+            };
+            const idxExistente = listaAtual.findIndex(item => String(item.destino || '').toUpperCase() === destUp);
+            if (idxExistente > -1) listaAtual[idxExistente] = novoReg;
+            else listaAtual.push(novoReg);
+
+            lacresSolicitadosPorOperacao[chave] = listaAtual;
+            try { localStorage.setItem('cache_lacres_solicitados_v1', JSON.stringify(lacresSolicitadosPorOperacao)); } catch (e) {}
+            renderCardsRelatorios();
+
+            const idRow = '__SYS_LACRES__' + chave.replace(/[^a-zA-Z0-9]/g, '_');
+            const evRt = {
+                type: 'LACRES_SOLICITADOS_REALTIME',
+                operacao: chave,
+                lacres_solicitados: listaAtual,
+                ts: Date.now()
+            };
+            try { if (busLocalAereo) busLocalAereo.postMessage(evRt); } catch (e) {}
+            try { if (canalRealtimeAereo) canalRealtimeAereo.send({ type: 'broadcast', event: 'LACRES_SOLICITADOS_REALTIME', payload: evRt }); } catch (e) {}
+            if (supabaseClient) {
+                try {
+                    await supabaseClient.from('minutas').upsert([{
+                        id: idRow,
+                        destino: 'SYS_LACRES',
+                        cia: 'SYS',
+                        operador: usuarioLogado || 'EQUIPE',
+                        status: 'ATIVA',
+                        operacao: chave,
+                        dados: {
+                            lacres_solicitados: listaAtual,
+                            atualizado_em: Date.now()
+                        }
+                    }]);
+                } catch (e) {}
+            }
+        }
+
+        window.limparStatusLacresSolicitadosHoje = async function() {
+            const chave = obterChaveEscopoSolicitacaoLacres();
+            lacresSolicitadosPorOperacao[chave] = [];
+            try { localStorage.setItem('cache_lacres_solicitados_v1', JSON.stringify(lacresSolicitadosPorOperacao)); } catch (e) {}
+            atualizarBannerModalLacresSolicitados();
+            selecionarDestinoSolicitacaoLacre(destinoSelecionadoSolicitacaoLacre);
+            renderCardsRelatorios();
+            const idRow = '__SYS_LACRES__' + chave.replace(/[^a-zA-Z0-9]/g, '_');
+            if (supabaseClient) {
+                try {
+                    await supabaseClient.from('minutas').upsert([{
+                        id: idRow,
+                        destino: 'SYS_LACRES',
+                        cia: 'SYS',
+                        operador: usuarioLogado || 'EQUIPE',
+                        status: 'ATIVA',
+                        operacao: chave,
+                        dados: { lacres_solicitados: [], atualizado_em: Date.now() }
+                    }]);
+                } catch (e) {}
+            }
+            showToast('Status de solicitação de lacres desmarcado.');
+        };
+
+        function atualizarBannerModalLacresSolicitados() {
+            const banner = document.getElementById('banner-lacres-ja-solicitados');
+            const txt = document.getElementById('texto-lacres-ja-solicitados');
+            if (!banner || !txt) return;
+            const solicitados = obterListaLacresSolicitadosEscopoAtual();
+            if (solicitados.length === 0) {
+                banner.classList.add('hidden');
+                return;
+            }
+            const detalhes = solicitados.map(s => `${s.destino} (${s.qtd} un • ${s.operador || 'Equipe'}${s.horario ? ' às ' + s.horario : ''})`).join(' | ');
+            txt.textContent = `✅ Lacres já solicitados hoje: ${detalhes}`;
+            banner.classList.remove('hidden');
+        }
+
+        function obterDadosEmailSolicitacaoLacres(destinoAlvo, qtdLacres) {
+            const destUp = String(destinoAlvo || 'GRU').trim().toUpperCase();
+            const qtdLimpa = Math.max(1, parseInt(String(qtdLacres || '15'), 10) || 15);
+            const { dataBarra } = obterDatasOperacaoFormatadas();
+
+            const cfg = emailsConfigDb.find(e => (e.cia || '').toUpperCase() === 'LACRES' && (e.destino || '').toUpperCase() === destUp)
+                     || DEFAULT_EMAILS_CONFIG.find(e => e.cia === 'LACRES' && e.destino === destUp)
+                     || {
+                         para: 'suzana.pauletto.osv@fedex.com; aline.garcias.osv@fedex.com; vcp-portaria@corp.ds.fedex.com; vcpsecurity@corp.ds.fedex.com',
+                         cc: 'flima1@fedex.com; Cristiane.Goncalves@fedex.com; Rosiane.Rocha@fedex.com; jaqueline.borges@fedex.com; josesilva3@fedex.com',
+                         assunto: 'SOLICITAÇÃO DE LACRES ([Data])',
+                         corpo: destUp === 'VCP'
+                             ? 'Boa noite,\n\nPor gentileza providenciar [QTD] lacres, para a operação Linehaul VCP.\n\nObrigado.'
+                             : `Boa noite,\n\nPor gentileza providenciar [QTD] lacres, para a operação no aeroporto de ${destUp}.\n\nObrigado.`
+                     };
+
+            const para = String(cfg.para || '').trim();
+            const cc = String(cfg.cc || '').trim();
+            const assunto = String(cfg.assunto || `SOLICITAÇÃO DE LACRES (${dataBarra})`)
+                .replace(/\[Data\]/gi, dataBarra)
+                .replace(/\(DATA\)/gi, `(${dataBarra})`);
+
+            let corpo = String(cfg.corpo || '')
+                .replace(/\[Data\]/gi, dataBarra)
+                .replace(/\[QTD\]/gi, String(qtdLimpa))
+                .replace(/providenciar\s+\d+\s+lacres/gi, `providenciar ${qtdLimpa} lacres`);
+
+            return { destUp, qtdLimpa, dataBarra, para, cc, assunto, corpo };
+        }
+
+        window.abrirModalSolicitarLacres = function() {
+            destinoSelecionadoSolicitacaoLacre = 'GRU';
+            const inpQtd = document.getElementById('input-qtd-lacres-solicitar');
+            if (inpQtd && !inpQtd.value) inpQtd.value = '15';
+            atualizarBannerModalLacresSolicitados();
+            selecionarDestinoSolicitacaoLacre('GRU');
+            document.getElementById('modal-solicitar-lacres')?.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+            setTimeout(() => inpQtd?.focus(), 40);
+        };
+
+        window.fecharModalSolicitarLacres = function() {
+            document.getElementById('modal-solicitar-lacres')?.classList.add('hidden');
+        };
+
+        window.selecionarDestinoSolicitacaoLacre = function(dest) {
+            destinoSelecionadoSolicitacaoLacre = String(dest || 'GRU').toUpperCase();
+            ['GRU', 'CGH', 'VCP'].forEach(d => {
+                const btn = document.getElementById(`btn-lacre-dest-${d}`);
+                if (!btn) return;
+                if (d === destinoSelecionadoSolicitacaoLacre) {
+                    btn.className = 'py-3 px-3 rounded-xl font-extrabold text-xs sm:text-sm border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 transition flex flex-col items-center justify-center gap-0.5 shadow-sm';
+                } else {
+                    btn.className = 'py-3 px-3 rounded-xl font-extrabold text-xs sm:text-sm border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:border-slate-300 transition flex flex-col items-center justify-center gap-0.5';
+                }
+            });
+            atualizarPreviaModalSolicitarLacres();
+        };
+
+        window.definirQtdRapidaLacres = function(qtd) {
+            const inp = document.getElementById('input-qtd-lacres-solicitar');
+            if (inp) inp.value = String(qtd);
+            atualizarPreviaModalSolicitarLacres();
+        };
+
+        window.atualizarPreviaModalSolicitarLacres = function() {
+            const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
+            const info = obterDadosEmailSolicitacaoLacres(destinoSelecionadoSolicitacaoLacre, qtd);
+            const elAssunto = document.getElementById('previa-lacre-assunto');
+            const elCorpo = document.getElementById('previa-lacre-corpo');
+            if (elAssunto) elAssunto.textContent = info.assunto;
+            if (elCorpo) elCorpo.textContent = info.corpo;
+        };
+
+        window.dispararSolicitacaoLacresMailto = function() {
+            const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
+            const info = obterDadosEmailSolicitacaoLacres(destinoSelecionadoSolicitacaoLacre, qtd);
+            // No protocolo mailto: (iOS Mail / Android / Outlook), múltiplos e-mails são separados por vírgula
+            const paraMailto = info.para.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
+            const ccMailto = info.cc.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
+            const corpoComAssinaturaTexto = `${info.corpo}\n\n--\nFelipe Canato | Service Agent II | FedEx Brasil\nInt'l Viracopos Airport | Campinas, SP`;
+            const mailtoUrl = `mailto:${paraMailto}?cc=${encodeURIComponent(ccMailto)}&subject=${encodeURIComponent(info.assunto)}&body=${encodeURIComponent(corpoComAssinaturaTexto)}`;
+            fecharModalSolicitarLacres();
+            registrarSolicitacaoLacresNaOperacao(info.destUp, info.qtdLimpa);
+            window.location.href = mailtoUrl;
+            showToast(`📧 Lacres solicitados para ${info.destUp} (${info.qtdLimpa} un)! Abrindo e-mail...`);
+        };
+
+        window.dispararSolicitacaoLacresEmlOutlook = function() {
+            const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
+            const info = obterDadosEmailSolicitacaoLacres(destinoSelecionadoSolicitacaoLacre, qtd);
+            const htmlCompleto = montarHtmlEmailComAssinaturaFedEx(info.corpo);
+            const htmlBase64 = quebrarBase64Em76Colunas(btoa(unescape(encodeURIComponent(htmlCompleto))));
+            const boundary = '----=_NextPart_FedEx_Lacres_' + Date.now();
+            const linhasEml = [
+                `To: ${info.para}`,
+                info.cc ? `Cc: ${info.cc}` : null,
+                `Subject: ${codificarAssuntoMimeUtf8(info.assunto)}`,
+                `X-Unsent: 1`,
+                `MIME-Version: 1.0`,
+                `Content-Type: multipart/mixed; boundary="${boundary}"`,
+                ``,
+                `--${boundary}`,
+                `Content-Type: text/html; charset="utf-8"`,
+                `Content-Transfer-Encoding: base64`,
+                ``,
+                htmlBase64,
+                ``,
+                `--${boundary}--`,
+                ``
+            ];
+            const conteudoFinalEml = linhasEml.filter(l => l !== null).join('\r\n');
+            const blobEml = new Blob([conteudoFinalEml], { type: 'message/rfc822' });
+            const urlEml = URL.createObjectURL(blobEml);
+            const nomeEml = `SOLICITACAO DE LACRES - ${info.destUp} (${info.qtdLimpa} LACRES) - ${info.dataBarra.replace(/\//g, '-')}.eml`;
+            const link = document.createElement('a');
+            link.href = urlEml;
+            link.download = nomeEml;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(urlEml), 10000);
+            registrarSolicitacaoLacresNaOperacao(info.destUp, info.qtdLimpa);
+            fecharModalSolicitarLacres();
+            showToast(`✅ Lacres solicitados para ${info.destUp} (${info.qtdLimpa} un) — Rascunho Outlook gerado!`);
+        };
+
+        window.dispararSolicitacaoLacresPadrao = function() {
+            if (typeof window.saIsMobileDevice === 'function' && window.saIsMobileDevice()) {
+                dispararSolicitacaoLacresMailto();
+            } else {
+                dispararSolicitacaoLacresEmlOutlook();
+            }
+        };
+
         function renderEmailsConfig() {
             const list = document.getElementById('emails-config-list');
             if (!list) return;
@@ -6871,7 +7262,9 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                     ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400'
                     : (ciaUp === 'FORMAL'
                         ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400'
-                        : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400');
+                        : (ciaUp === 'LACRES'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400'
+                            : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400'));
                 return `
                 <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition">
                     <td class="py-3 px-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${corCia}">${e.cia || ''}</span></td>
