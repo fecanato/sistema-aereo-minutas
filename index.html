@@ -5303,10 +5303,18 @@
                     }
 
                     if (p === 1) {
-                        const mLacrePag = pageStr.match(/\b(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*(\d{4,8})\b/i);
+                        const mLacrePag = pageStr.match(/\b(?:LACRE[S]?|LCR[S]?|SEAL[S]?)\s*[:\-]?\s*([0-9/\s-]{4,48})/i) || pageStr.match(/condicoes\s+contratuais\s*\.\s*((?:0[1-9]\d{4})+)/i);
                         if (mLacrePag) {
                             jaTemLacre = true;
-                            if (!lacreDetectadoPdf) lacreDetectadoPdf = mLacrePag[1];
+                            const rawLcr = String(mLacrePag[1] || '').trim();
+                            const digitsLcr = rawLcr.replace(/\D/g, '');
+                            if (digitsLcr.length >= 12 && digitsLcr.length % 6 === 0) {
+                                const parts = [];
+                                for (let k = 0; k < digitsLcr.length; k += 6) parts.push(digitsLcr.slice(k, k + 6));
+                                if (!lacreDetectadoPdf) lacreDetectadoPdf = parts.join(' / ');
+                            } else if (!lacreDetectadoPdf) {
+                                lacreDetectadoPdf = rawLcr;
+                            }
                         }
                         for (const item of textContent.items) {
                             const s = (item.str || '').toUpperCase();
@@ -5349,8 +5357,8 @@
                     if (matchBarcode) {
                         cte = matchBarcode[1];
                     } else {
-                        const match11 = textoCompleto.match(/\b(127\d{8})\b/);
-                        if (match11) cte = match11[1];
+                        const match11 = textoCompleto.match(/\b(127\s*-\s*\d{4}\s*\d{4}|127\d{8})\b/);
+                        if (match11) cte = match11[1].replace(/\D/g, '');
                     }
                 }
             }
@@ -5643,7 +5651,8 @@
             const { cte, refInfo, jaTemLacre, textoCompleto } = dadosPdf;
             const lacreDaMinuta = String(minutaAberta.dados?.LACRE_ORIGINAL || minutaAberta.dados?.remessa?.Lacre || '').trim();
             const lacreNumsMinuta = (lacreDaMinuta.match(/\d{4,8}/g) || []);
-            const pdfJaContemLacreExato = jaTemLacre || (lacreNumsMinuta.length > 0 && lacreNumsMinuta.every(num => String(textoCompleto || '').includes(num)));
+            const textoDigitsOnly = String(textoCompleto || '').replace(/\D/g, '');
+            const pdfJaContemLacreExato = jaTemLacre || (lacreNumsMinuta.length > 0 && lacreNumsMinuta.every(num => String(textoCompleto || '').includes(num) || textoDigitsOnly.includes(num)));
             const pdfDataUriEditado = await carimbarLacreNoPdfGol(arrayBuffer, lacreDaMinuta, refInfo, pdfJaContemLacreExato, opcoesPeso);
 
             const inputAwb = document.getElementById('input-awb-minuta');
