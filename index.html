@@ -7176,17 +7176,23 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
         window.dispararSolicitacaoLacresMailto = function() {
             const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
             const info = obterDadosEmailSolicitacaoLacres(destinoSelecionadoSolicitacaoLacre, qtd);
-            // No protocolo mailto: (iOS Mail / Android / Outlook), múltiplos e-mails são separados por vírgula
-            const paraMailto = info.para.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
-            const ccMailto = info.cc.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
+            const frasePrincipal = info.destUp === 'VCP'
+                ? `Por gentileza providenciar ${info.qtdLimpa} lacres, para a operação Linehaul VCP.`
+                : `Por gentileza providenciar ${info.qtdLimpa} lacres, para a operação no aeroporto de ${info.destUp}.`;
+
+            // Gatilho estruturado para o Power Automate (felipebarros@fedex.com):
+            // Formato do Assunto: LACRE_FEDEX|SOLICITAÇÃO DE LACRES (DD/MM/AAAA)|Por gentileza providenciar X lacres...
+            // Assim o Power Automate lê direto do assunto (ignorando avisos [EXTERNAL] ou "Enviado do meu iPhone" do corpo) e dispara 100% limpo pela conta @fedex.com!
+            const assuntoGatilhoPowerAutomate = `LACRE_FEDEX|${info.assunto}|${frasePrincipal}`;
             const corpoFinalSemAssinaturaFixa = String(info.corpo || '').trim();
-            const mailtoUrl = `mailto:${paraMailto}?cc=${encodeURIComponent(ccMailto)}&subject=${encodeURIComponent(info.assunto)}&body=${encodeURIComponent(corpoFinalSemAssinaturaTexto_fix(corpoFinalSemAssinaturaFixa))}`;
+            const emailGatilhoFedEx = 'felipebarros@fedex.com';
+
+            const mailtoUrl = `mailto:${emailGatilhoFedEx}?subject=${encodeURIComponent(assuntoGatilhoPowerAutomate)}&body=${encodeURIComponent(corpoFinalSemAssinaturaFixa)}`;
             fecharModalSolicitarLacres();
             registrarSolicitacaoLacresNaOperacao(info.destUp, info.qtdLimpa);
             window.location.href = mailtoUrl;
-            showToast(`📧 Lacres solicitados para ${info.destUp} (${info.qtdLimpa} un)!`);
+            showToast(`📧 Gatilho de ${info.qtdLimpa} lacres (${info.destUp}) pronto para envio via Power Automate!`);
         };
-        function corpoFinalSemAssinaturaTexto_fix(txt) { return txt; }
 
         window.dispararSolicitacaoLacresEmlOutlook = function() {
             const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
