@@ -625,7 +625,7 @@
 
     <!-- MODAL DE SOLICITAÇÃO DE LACRES (SEGURANÇA FEDEX — GRU, CGH, VCP) -->
     <div id="modal-solicitar-lacres" class="hidden fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 max-h-[92vh] flex flex-col">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
             <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-emerald-50/60 dark:bg-emerald-500/10">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-sm shrink-0">
@@ -641,11 +641,11 @@
                 </button>
             </div>
 
-            <div class="p-5 space-y-4 overflow-y-auto flex-1">
-                <div id="banner-lacres-ja-solicitados" class="hidden p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2">
-                    <span id="texto-lacres-ja-solicitados" class="font-bold leading-snug"></span>
-                    <button type="button" onclick="limparStatusLacresSolicitadosHoje()" class="px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-800 text-[10px] font-bold text-slate-500 hover:text-rose-500 transition shrink-0">Desmarcar</button>
+            <div class="p-5 space-y-4">
+                <div id="banner-lacres-ja-solicitados" class="hidden px-3 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-[11px] sm:text-xs text-emerald-900 dark:text-emerald-200">
+                    <span id="texto-lacres-ja-solicitados" class="font-bold block truncate whitespace-nowrap"></span>
                 </div>
+
                 <div>
                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">1. Selecione a Operação / Destino</label>
                     <div class="grid grid-cols-3 gap-2">
@@ -666,32 +666,13 @@
 
                 <div>
                     <label for="input-qtd-lacres-solicitar" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">2. Quantidade de Lacres</label>
-                    <div class="flex items-center gap-2">
-                        <input type="number" id="input-qtd-lacres-solicitar" min="1" max="500" value="15" oninput="atualizarPreviaModalSolicitarLacres()" onkeydown="if(event.key==='Enter') dispararSolicitacaoLacresPadrao()" class="w-28 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-base font-extrabold text-center focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                        <div class="flex flex-wrap gap-1.5 flex-1">
-                            <button type="button" onclick="definirQtdRapidaLacres(10)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">10</button>
-                            <button type="button" onclick="definirQtdRapidaLacres(15)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">15</button>
-                            <button type="button" onclick="definirQtdRapidaLacres(20)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">20</button>
-                            <button type="button" onclick="definirQtdRapidaLacres(25)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">25</button>
-                            <button type="button" onclick="definirQtdRapidaLacres(30)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 text-slate-700 dark:text-slate-200 text-xs font-bold transition">30</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
-                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Prévia do E-mail</div>
-                    <div class="text-slate-700 dark:text-slate-300 truncate"><strong class="text-slate-500">Assunto:</strong> <span id="previa-lacre-assunto" class="font-bold"></span></div>
-                    <pre id="previa-lacre-corpo" class="text-slate-700 dark:text-slate-200 font-sans whitespace-pre-wrap leading-relaxed pt-1 border-t border-slate-200/70 dark:border-slate-700/60 mt-1"></pre>
+                    <input type="number" id="input-qtd-lacres-solicitar" min="1" max="500" value="15" onkeydown="if(event.key==='Enter') dispararSolicitacaoLacresMailto()" class="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-base font-extrabold text-center focus:outline-none focus:ring-2 focus:ring-emerald-500">
                 </div>
 
                 <div class="pt-1 flex flex-col gap-2">
-                    <button type="button" onclick="dispararSolicitacaoLacresMailto()" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition shadow-sm flex items-center justify-center gap-2">
-                        <i data-lucide="mail" class="w-4 h-4 shrink-0"></i>
-                        <span>Abrir no App Mail (iPhone / Celular / E-mail Padrão)</span>
-                    </button>
-                    <button type="button" onclick="dispararSolicitacaoLacresEmlOutlook()" class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-bold text-xs transition flex items-center justify-center gap-2">
-                        <i data-lucide="download" class="w-4 h-4 shrink-0"></i>
-                        <span>Baixar Rascunho Outlook (.eml com Assinatura FedEx)</span>
+                    <button type="button" onclick="dispararSolicitacaoLacresMailto()" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-sm flex items-center justify-center gap-2">
+                        <i data-lucide="send" class="w-4 h-4 shrink-0"></i>
+                        <span>Enviar</span>
                     </button>
                     <button type="button" onclick="fecharModalSolicitarLacres()" class="w-full py-2 rounded-xl text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold text-xs transition">
                         Cancelar
@@ -7113,8 +7094,8 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
                 banner.classList.add('hidden');
                 return;
             }
-            const detalhes = solicitados.map(s => `${s.destino} (${s.qtd} un • ${s.operador || 'Equipe'}${s.horario ? ' às ' + s.horario : ''})`).join(' | ');
-            txt.textContent = `✅ Lacres já solicitados hoje: ${detalhes}`;
+            const resumoCurto = solicitados.map(s => `${s.destino} (${s.qtd} un • ${s.operador || 'Equipe'})`).join(', ');
+            txt.textContent = `✅ Lacres já solicitados hoje: ${resumoCurto}`;
             banner.classList.remove('hidden');
         }
 
@@ -7198,13 +7179,14 @@ O arquivo foi descartado. Corrija o peso ou clique em "Gerar Minuta Manual (Cont
             // No protocolo mailto: (iOS Mail / Android / Outlook), múltiplos e-mails são separados por vírgula
             const paraMailto = info.para.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
             const ccMailto = info.cc.split(/[;,]+/).map(s => s.trim()).filter(Boolean).join(',');
-            const corpoComAssinaturaTexto = `${info.corpo}\n\n--\nFelipe Canato | Service Agent II | FedEx Brasil\nInt'l Viracopos Airport | Campinas, SP`;
-            const mailtoUrl = `mailto:${paraMailto}?cc=${encodeURIComponent(ccMailto)}&subject=${encodeURIComponent(info.assunto)}&body=${encodeURIComponent(corpoComAssinaturaTexto)}`;
+            const corpoFinalSemAssinaturaFixa = String(info.corpo || '').trim();
+            const mailtoUrl = `mailto:${paraMailto}?cc=${encodeURIComponent(ccMailto)}&subject=${encodeURIComponent(info.assunto)}&body=${encodeURIComponent(corpoFinalSemAssinaturaTexto_fix(corpoFinalSemAssinaturaFixa))}`;
             fecharModalSolicitarLacres();
             registrarSolicitacaoLacresNaOperacao(info.destUp, info.qtdLimpa);
             window.location.href = mailtoUrl;
-            showToast(`📧 Lacres solicitados para ${info.destUp} (${info.qtdLimpa} un)! Abrindo e-mail...`);
+            showToast(`📧 Lacres solicitados para ${info.destUp} (${info.qtdLimpa} un)!`);
         };
+        function corpoFinalSemAssinaturaTexto_fix(txt) { return txt; }
 
         window.dispararSolicitacaoLacresEmlOutlook = function() {
             const qtd = document.getElementById('input-qtd-lacres-solicitar')?.value || '15';
